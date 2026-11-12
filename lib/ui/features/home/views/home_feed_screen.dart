@@ -207,13 +207,18 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 1. BİRLEŞTİRİLMİŞ ÜST ARAMA, BÜTÇE & DÜNYA FİLTRESİ ÇUBUĞU (Rotalarda Yakınımdaki Konumlar kapalı, Bütçe Aralığı açık)
+            // 1. ORTAK ARAMA ÇUBUĞU, BÜTÇE FİLTRESİ & FİLTRE HAPLARI
             GeographyTreeFilterBar(
               filterModel: viewModel,
-              showNearbyButton: false,
-              showBudgetFilter: true,
               resultCountLabelBuilder: () =>
                   '${viewModel.geographyFilteredRoutesCount} Rota',
+              searchHintText: 'Ülke, konum veya şehir ismi ile ara...',
+              showNearbyButton: false,
+              showBudgetFilter: true,
+              showTreeDrawerButton: false,
+              searchBarKey: const ValueKey<String>('home_routes_search_bar_tap'),
+              budgetButtonKey:
+                  const ValueKey<String>('home_routes_budget_filter_btn'),
             ),
 
             const SizedBox(height: 8),
@@ -227,13 +232,13 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.map_outlined,
                               size: 48,
                               color: BeenHereColors.textSecondary,
                             ),
                             const SizedBox(height: 12),
-                            const Text(
+                            Text(
                               'Seçilen bölge/şehir filtresinde henüz yayınlanmış rota bulunmuyor.',
                               textAlign: TextAlign.center,
                               style: TextStyle(

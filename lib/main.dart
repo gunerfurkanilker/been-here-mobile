@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'ui/core/theme/been_here_theme.dart';
 import 'ui/core/view_models/navigation_shell_view_model.dart';
@@ -55,45 +56,65 @@ class _BeenHereAppState extends State<BeenHereApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Been Here',
-      debugShowCheckedModeBanner: false,
-      theme: BeenHereTheme.darkTheme,
-      home: BeenHereShellScaffold(
-        viewModel: shellViewModel,
-        tabBodies: {
-          BeenHereNavTab.home: HomeFeedScreen(viewModel: homeFeedViewModel),
-          BeenHereNavTab.leaderboards: const _PhaseOnePreviewPlaceholder(
-            icon: Icons.emoji_events_rounded,
-            badgeText: 'FAZ 6\'DA DETAYLANDIRILACAK',
-            title: '🏆 Ligler (Kıta > Tekil Ülke & Adil Bölgesel Sıralama)',
-            highlights: [
-              '1. Global | 2. Avrupa (Tümü, Almanya, Fransa, Belçika...) | 3. Asya (Tümü, Rusya, Tayland...)',
-              'Tekil ülke seçimi (Anasayfa\'daki çoklu seçimden farklı olarak)',
-              'user_regional_scores tablosu üzerinden adil bölgesel puan (regional_points) sıralaması',
-            ],
+    return ListenableBuilder(
+      listenable: BeenHereThemeController.instance,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'Been Here',
+          debugShowCheckedModeBanner: false,
+          scrollBehavior: const _BeenHereScrollBehavior(),
+          theme: BeenHereTheme.lightTheme,
+          darkTheme: BeenHereTheme.darkTheme,
+          themeMode: BeenHereThemeController.instance.themeMode,
+          home: BeenHereShellScaffold(
+            viewModel: shellViewModel,
+            tabBodies: {
+              BeenHereNavTab.home: HomeFeedScreen(viewModel: homeFeedViewModel),
+              BeenHereNavTab.leaderboards: const _PhaseOnePreviewPlaceholder(
+                icon: Icons.emoji_events_rounded,
+                badgeText: 'FAZ 6\'DA DETAYLANDIRILACAK',
+                title: '🏆 Ligler (Kıta > Tekil Ülke & Adil Bölgesel Sıralama)',
+                highlights: [
+                  '1. Global | 2. Avrupa (Tümü, Almanya, Fransa, Belçika...) | 3. Asya (Tümü, Rusya, Tayland...)',
+                  'Tekil ülke seçimi (Anasayfa\'daki çoklu seçimden farklı olarak)',
+                  'user_regional_scores tablosu üzerinden adil bölgesel puan (regional_points) sıralaması',
+                ],
+              ),
+              BeenHereNavTab.compassRouteBuilder: RouteBuilderScreen(
+                viewModel: routeBuilderViewModel,
+              ),
+              BeenHereNavTab.placeSearch: PlaceSearchScreen(
+                viewModel: placeSearchViewModel,
+                homeFeedViewModel: homeFeedViewModel,
+              ),
+              BeenHereNavTab.profile: const _PhaseOnePreviewPlaceholder(
+                icon: Icons.person_rounded,
+                badgeText: 'FAZ 6\'DA DETAYLANDIRILACAK',
+                title: '👤 Profilim (Instagram Esinlenmeli Yapı)',
+                highlights: [
+                  'Sol üstte 1 Ana + Basılı Tutunca (Long Press) açılan 2 Alternatif Fotoğraf (Sırt çantalı gezgin silüeti)',
+                  'Rütbenin altında yatay sağa kayan kotasız Story "Öne Çıkarılanlar (Highlights)"',
+                  'Alt Sekmeler: Paylaşılan Rotalar (Ülke & Tarih filtreli), Taslaklarım, Kişisel Anılarım, Favori Listelerim ve Soru & Cevap (Q&A)',
+                ],
+              ),
+            },
           ),
-          BeenHereNavTab.compassRouteBuilder: RouteBuilderScreen(
-            viewModel: routeBuilderViewModel,
-          ),
-          BeenHereNavTab.placeSearch: PlaceSearchScreen(
-            viewModel: placeSearchViewModel,
-            homeFeedViewModel: homeFeedViewModel,
-          ),
-          BeenHereNavTab.profile: const _PhaseOnePreviewPlaceholder(
-            icon: Icons.person_rounded,
-            badgeText: 'FAZ 6\'DA DETAYLANDIRILACAK',
-            title: '👤 Profilim (Instagram Esinlenmeli Yapı)',
-            highlights: [
-              'Sol üstte 1 Ana + Basılı Tutunca (Long Press) açılan 2 Alternatif Fotoğraf (Sırt çantalı gezgin silüeti)',
-              'Rütbenin altında yatay sağa kayan kotasız Story "Öne Çıkarılanlar (Highlights)"',
-              'Alt Sekmeler: Paylaşılan Rotalar (Ülke & Tarih filtreli), Taslaklarım, Kişisel Anılarım, Favori Listelerim ve Soru & Cevap (Q&A)',
-            ],
-          ),
-        },
-      ),
+        );
+      },
     );
   }
+}
+
+class _BeenHereScrollBehavior extends MaterialScrollBehavior {
+  const _BeenHereScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+      };
 }
 
 class _PhaseOnePreviewPlaceholder extends StatelessWidget {
@@ -135,7 +156,7 @@ class _PhaseOnePreviewPlaceholder extends StatelessWidget {
                 ),
                 child: Text(
                   badgeText,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: BeenHereColors.primaryCompass,
@@ -154,7 +175,7 @@ class _PhaseOnePreviewPlaceholder extends StatelessWidget {
                   Expanded(
                     child: Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                         color: BeenHereColors.textPrimary,
@@ -164,7 +185,7 @@ class _PhaseOnePreviewPlaceholder extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 16),
-              const Divider(color: BeenHereColors.borderSubtle),
+              Divider(color: BeenHereColors.borderSubtle),
               const SizedBox(height: 12),
               for (final item in highlights)
                 Padding(
@@ -172,8 +193,8 @@ class _PhaseOnePreviewPlaceholder extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Padding(
-                        padding: EdgeInsets.only(top: 3),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
                         child: Icon(
                           Icons.check_circle_rounded,
                           size: 17,
@@ -184,7 +205,7 @@ class _PhaseOnePreviewPlaceholder extends StatelessWidget {
                       Expanded(
                         child: Text(
                           item,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             color: BeenHereColors.textSecondary,
                             height: 1.4,

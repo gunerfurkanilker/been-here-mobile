@@ -91,7 +91,7 @@ class _GlowingLiveTrackerButtonState extends State<GlowingLiveTrackerButton>
                 ),
                 if (!widget.isPremiumUser) ...[
                   const SizedBox(width: 4),
-                  const Icon(
+                  Icon(
                     Icons.workspace_premium_rounded,
                     size: 14,
                     color: BeenHereColors.goldLeague,

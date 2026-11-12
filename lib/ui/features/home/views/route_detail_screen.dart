@@ -220,7 +220,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                         ],
                                       ),
                                     ),
-                                    child: const Center(
+                                    child: Center(
                                       child: Icon(
                                         Icons.landscape_rounded,
                                         size: 54,
@@ -353,7 +353,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                   radius: 22,
                                   backgroundColor: BeenHereColors.primaryCompass
                                       .withValues(alpha: 0.2),
-                                  child: const Icon(
+                                  child: Icon(
                                     Icons.hiking_rounded,
                                     size: 24,
                                     color: BeenHereColors.primaryCompass,
@@ -372,7 +372,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                               route.authorDisplayName,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 14.5,
                                                 fontWeight: FontWeight.w700,
                                                 color:
@@ -383,7 +383,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                           const SizedBox(width: 6),
                                           Text(
                                             '@${route.authorUsername}',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 12,
                                               color:
                                                   BeenHereColors.textSecondary,
@@ -407,7 +407,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                             ),
                                             child: Text(
                                               route.authorRankLabel,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 10,
                                                 fontWeight: FontWeight.w700,
                                                 color:
@@ -423,7 +423,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                                 maxLines: 1,
                                                 overflow:
                                                     TextOverflow.ellipsis,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 11.5,
                                                   color: BeenHereColors
                                                       .textSecondary,
@@ -447,7 +447,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                         color: BeenHereColors.borderSubtle,
                                       ),
                                     ),
-                                    child: const Icon(
+                                    child: Icon(
                                       Icons.arrow_forward_ios_rounded,
                                       size: 14,
                                       color: BeenHereColors.primaryCompass,
@@ -463,7 +463,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                           // Başlık & Açıklama
                           Text(
                             route.title,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.w800,
                               color: BeenHereColors.textPrimary,
@@ -473,7 +473,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                           const SizedBox(height: 10),
                           Text(
                             route.description,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 14,
                               color: BeenHereColors.textSecondary,
                               height: 1.5,
@@ -520,13 +520,13 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                           // =======================================================
                           Row(
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.place_rounded,
                                 color: BeenHereColors.primaryCompass,
                                 size: 20,
                               ),
                               const SizedBox(width: 8),
-                              const Text(
+                              Text(
                                 'Rota Durakları ve Gezgin Notları',
                                 style: TextStyle(
                                   fontSize: 17,
@@ -548,7 +548,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                   ),
                                   child: Text(
                                     '${_activeStopIndex + 1} / ${stops.length} Durak',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 11.5,
                                       fontWeight: FontWeight.w700,
                                       color: BeenHereColors.primaryCompass,
@@ -561,7 +561,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
 
                           // MEKANLAR İÇİN INFINITE CAROUSEL (BİR SONRAKİ İTEM UÇTAN GÖRÜNÜR)
                           if (stops.isEmpty)
-                            const Padding(
+                            Padding(
                               padding: EdgeInsets.symmetric(vertical: 16),
                               child: Text(
                                 'Bu rotada henüz eklenmiş durak bulunmuyor.',
@@ -615,14 +615,14 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                     '📍 ${stops[_activeStopIndex].placeName}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
                                       color: BeenHereColors.goldLeague,
                                     ),
                                   ),
                                 ),
-                                const Row(
+                                Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
@@ -649,7 +649,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                           // =======================================================
                           // 2. ESNEK KONAKLAMA ÖZETİ
                           // =======================================================
-                          const Row(
+                          Row(
                             children: [
                               Icon(
                                 Icons.hotel_rounded,
@@ -684,7 +684,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                         const EdgeInsets.symmetric(vertical: 6),
                                     child: Row(
                                       children: [
-                                        const Icon(
+                                        Icon(
                                           Icons.bed_rounded,
                                           color: BeenHereColors.secondaryAmber,
                                           size: 20,
@@ -693,7 +693,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                         Expanded(
                                           child: Text(
                                             '${stay.stayTypeLabel} • ${stay.regionOrHotelName}',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontWeight: FontWeight.w600,
                                               color: BeenHereColors.textPrimary,
                                             ),
@@ -712,7 +712,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                           ),
                                           child: Text(
                                             '${stay.nightsCount} Gece',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w700,
                                               color: BeenHereColors.goldLeague,
@@ -730,7 +730,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                           // =======================================================
                           // 3. YUVARLAK BÜTÇE KALEMLERİ DAĞILIMI
                           // =======================================================
-                          const Row(
+                          Row(
                             children: [
                               Icon(
                                 Icons.account_balance_wallet_rounded,
@@ -764,7 +764,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
                                   children: [
-                                    const Text(
+                                    Text(
                                       'Toplam Tahmini Maliyet:',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w600,
@@ -773,7 +773,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                     ),
                                     Text(
                                       '\$${route.estimatedBudgetUsd.round()} (${route.estimatedBudgetLocal.round()} ${route.localCurrencySymbol})',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w800,
                                         color: BeenHereColors.verifiedEmerald,
@@ -782,7 +782,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 12),
-                                const Divider(color: BeenHereColors.borderSubtle),
+                                Divider(color: BeenHereColors.borderSubtle),
                                 const SizedBox(height: 8),
                                 for (final entry in route.budgetBreakdown.entries)
                                   Padding(
@@ -794,14 +794,14 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                       children: [
                                         Text(
                                           entry.key,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 13.5,
                                             color: BeenHereColors.textPrimary,
                                           ),
                                         ),
                                         Text(
                                           '\$${entry.value.round()}',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 13.5,
                                             fontWeight: FontWeight.w700,
                                             color:
@@ -819,7 +819,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                           // =======================================================
                           // 4. GEZGİN SORU & CEVAP (Q&A) ALANI
                           // =======================================================
-                          const Row(
+                          Row(
                             children: [
                               Icon(
                                 Icons.question_answer_rounded,
@@ -858,7 +858,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                           decoration: InputDecoration(
                                             hintText:
                                                 'Rota sahibine soru sor (örn: yol durumu, biletler)...',
-                                            hintStyle: const TextStyle(
+                                            hintStyle: TextStyle(
                                               fontSize: 13,
                                               color:
                                                   BeenHereColors.textSecondary,
@@ -889,7 +889,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                   const SizedBox(height: 16),
                                 ],
                                 if (questions.isEmpty)
-                                  const Padding(
+                                  Padding(
                                     padding: EdgeInsets.symmetric(vertical: 8),
                                     child: Text(
                                       'Henüz bu rotaya soru sorulmamış. İlk soruyu sen sorabilirsin!',
@@ -919,7 +919,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                             children: [
                                               Text(
                                                 '@${q.askerUsername}',
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 12,
                                                   fontWeight: FontWeight.w700,
                                                   color:
@@ -928,7 +928,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                               ),
                                               Text(
                                                 q.createdAtLabel,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 11,
                                                   color: BeenHereColors
                                                       .textSecondary,
@@ -939,7 +939,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                           const SizedBox(height: 5),
                                           Text(
                                             'S: ${q.questionText}',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 13,
                                               fontWeight: FontWeight.w600,
                                               color:
@@ -950,7 +950,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                             const SizedBox(height: 6),
                                             Text(
                                               'C (@${route.authorUsername}): ${q.answerText}',
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 12.5,
                                                 color: BeenHereColors
                                                     .verifiedEmerald,
@@ -958,7 +958,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                             ),
                                           ] else ...[
                                             const SizedBox(height: 4),
-                                            const Text(
+                                            Text(
                                               '⏳ Rota sahibinin yanıtı bekleniyor...',
                                               style: TextStyle(
                                                 fontSize: 11.5,
@@ -1192,7 +1192,7 @@ class _StopSliderCard extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.star_rounded,
                           size: 15,
                           color: BeenHereColors.goldLeague,
@@ -1239,7 +1239,7 @@ class _StopSliderCard extends StatelessWidget {
                           isGeoVerified
                               ? 'Geo-Verified (+50p)'
                               : 'Photo-Verified (+20p)',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                             color: BeenHereColors.verifiedEmerald,
@@ -1268,7 +1268,7 @@ class _StopSliderCard extends StatelessWidget {
                           stop.placeName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
                             color: BeenHereColors.textPrimary,
@@ -1278,7 +1278,7 @@ class _StopSliderCard extends StatelessWidget {
                       const SizedBox(width: 6),
                       Text(
                         stop.city,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                           color: BeenHereColors.textSecondary,
@@ -1309,7 +1309,7 @@ class _StopSliderCard extends StatelessWidget {
                               ),
                               child: Text(
                                 '#$vibe',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w600,
                                   color: BeenHereColors.goldLeague,
@@ -1340,14 +1340,14 @@ class _StopSliderCard extends StatelessWidget {
                                 children: [
                                   Text(
                                     '+${stop.vibes.length - 2} Diğer',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.w700,
                                       color: BeenHereColors.primaryCompass,
                                     ),
                                   ),
                                   const SizedBox(width: 2),
-                                  const Icon(
+                                  Icon(
                                     Icons.chevron_right_rounded,
                                     size: 12,
                                     color: BeenHereColors.primaryCompass,
@@ -1374,7 +1374,7 @@ class _StopSliderCard extends StatelessWidget {
                               stop.comment,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12.5,
                                 color: BeenHereColors.textSecondary,
                                 height: 1.4,
@@ -1383,7 +1383,7 @@ class _StopSliderCard extends StatelessWidget {
                           ),
                           if (stop.comment.length > 60) ...[
                             const SizedBox(height: 2),
-                            const Row(
+                            Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
@@ -1430,7 +1430,7 @@ class _StopSliderCard extends StatelessWidget {
                         ),
                         child: Row(
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.warning_amber_rounded,
                               size: 13,
                               color: BeenHereColors.secondaryAmber,
@@ -1461,7 +1461,7 @@ class _StopSliderCard extends StatelessWidget {
                                 ),
                                 child: Text(
                                   '+${stop.warnings.length - 1}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 9.5,
                                     fontWeight: FontWeight.w700,
                                     color: BeenHereColors.secondaryAmber,
@@ -1470,7 +1470,7 @@ class _StopSliderCard extends StatelessWidget {
                               ),
                             ],
                             const SizedBox(width: 4),
-                            const Icon(
+                            Icon(
                               Icons.chevron_right_rounded,
                               size: 13,
                               color: BeenHereColors.secondaryAmber,
@@ -1523,7 +1523,7 @@ class _StopSliderCard extends StatelessWidget {
       builder: (ctx) {
         return Container(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: BeenHereColors.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             border: Border(
@@ -1547,7 +1547,7 @@ class _StopSliderCard extends StatelessWidget {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.local_offer_rounded,
                     size: 20,
                     color: BeenHereColors.goldLeague,
@@ -1558,7 +1558,7 @@ class _StopSliderCard extends StatelessWidget {
                       '${stop.placeName} • Topluluk Etiketleri',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
                         color: BeenHereColors.textPrimary,
@@ -1568,7 +1568,7 @@ class _StopSliderCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'Gezginlerin bu mekan için en çok oy verdiği atmosfer etiketleri:',
                 style: TextStyle(
                   fontSize: 12.5,
@@ -1597,7 +1597,7 @@ class _StopSliderCard extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.tag_rounded,
                             size: 13,
                             color: BeenHereColors.goldLeague,
@@ -1605,7 +1605,7 @@ class _StopSliderCard extends StatelessWidget {
                           const SizedBox(width: 4),
                           Text(
                             vibe,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
                               color: BeenHereColors.textPrimary,
@@ -1632,7 +1632,7 @@ class _StopSliderCard extends StatelessWidget {
       builder: (ctx) {
         return Container(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 36),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: BeenHereColors.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             border: Border(
@@ -1663,7 +1663,7 @@ class _StopSliderCard extends StatelessWidget {
                           BeenHereColors.primaryCompass.withValues(alpha: 0.16),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.format_quote_rounded,
                       size: 20,
                       color: BeenHereColors.primaryCompass,
@@ -1678,7 +1678,7 @@ class _StopSliderCard extends StatelessWidget {
                           stop.placeName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
                             color: BeenHereColors.textPrimary,
@@ -1686,7 +1686,7 @@ class _StopSliderCard extends StatelessWidget {
                         ),
                         Text(
                           '${stop.city} • Gezgin Seyahat Notu',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11.5,
                             color: BeenHereColors.textSecondary,
                           ),
@@ -1697,7 +1697,7 @@ class _StopSliderCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 14),
-              const Divider(height: 1, color: BeenHereColors.borderSubtle),
+              Divider(height: 1, color: BeenHereColors.borderSubtle),
               const SizedBox(height: 14),
               Container(
                 width: double.infinity,
@@ -1709,7 +1709,7 @@ class _StopSliderCard extends StatelessWidget {
                 ),
                 child: Text(
                   stop.comment,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     color: BeenHereColors.textPrimary,
                     height: 1.55,
@@ -1734,7 +1734,7 @@ class _StopSliderCard extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.warning_amber_rounded,
                         size: 16,
                         color: BeenHereColors.secondaryAmber,
@@ -1769,7 +1769,7 @@ class _StopSliderCard extends StatelessWidget {
       builder: (ctx) {
         return Container(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 36),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: BeenHereColors.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             border: Border(
@@ -1799,7 +1799,7 @@ class _StopSliderCard extends StatelessWidget {
                       color: const Color(0xFF5A2022),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.warning_amber_rounded,
                       size: 20,
                       color: BeenHereColors.secondaryAmber,
@@ -1814,7 +1814,7 @@ class _StopSliderCard extends StatelessWidget {
                           stop.placeName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
                             color: BeenHereColors.textPrimary,
@@ -1822,7 +1822,7 @@ class _StopSliderCard extends StatelessWidget {
                         ),
                         Text(
                           '${stop.city} • Gezgin Saha Uyarıları (${stop.warnings.length} Bildirim)',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11.5,
                             color: BeenHereColors.secondaryAmber,
                           ),
@@ -1833,9 +1833,9 @@ class _StopSliderCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 14),
-              const Divider(height: 1, color: BeenHereColors.borderSubtle),
+              Divider(height: 1, color: BeenHereColors.borderSubtle),
               const SizedBox(height: 14),
-              const Text(
+              Text(
                 'Bu mekan için gezginler tarafından bildirilen dikkat edilmesi gereken durumlar:',
                 style: TextStyle(
                   fontSize: 12.5,
@@ -1858,7 +1858,7 @@ class _StopSliderCard extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.only(top: 2),
                         child: Icon(
                           Icons.report_problem_rounded,
@@ -1900,7 +1900,7 @@ class _StopSliderCard extends StatelessWidget {
           ],
         ),
       ),
-      child: const Center(
+      child: Center(
         child: Icon(
           Icons.landscape_rounded,
           size: 44,

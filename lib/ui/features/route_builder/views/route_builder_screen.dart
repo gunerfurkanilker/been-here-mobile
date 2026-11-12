@@ -1,11 +1,13 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../core/theme/been_here_theme.dart';
+import '../../../core/widgets/geography_tree_filter_bar.dart';
 import '../view_models/route_builder_view_model.dart';
 
-class RouteBuilderScreen extends StatelessWidget {
+class RouteBuilderScreen extends StatefulWidget {
   const RouteBuilderScreen({
     super.key,
     required this.viewModel,
@@ -13,9 +15,151 @@ class RouteBuilderScreen extends StatelessWidget {
 
   final RouteBuilderViewModel viewModel;
 
+  @override
+  State<RouteBuilderScreen> createState() => _RouteBuilderScreenState();
+}
+
+class _RouteBuilderScreenState extends State<RouteBuilderScreen>
+    with SingleTickerProviderStateMixin {
+  bool _isProgressTreeVisible = true;
+  double _verticalScrollDelta = 0.0;
+  RouteWizardStep? _lastStep;
+  String? _lastFilterSignature;
+  late final AnimationController _progressTreeController;
+  late final CurvedAnimation _progressTreeAnimation;
+
+  String _computeFilterSignature(RouteBuilderViewModel vm) {
+    final pillsSig =
+        vm.filterPills.map((p) => '${p.id}:${p.isEnabled}').join(',');
+    return '${vm.searchFilterQuery}|$pillsSig';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _progressTreeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+      reverseDuration: const Duration(milliseconds: 320),
+      value: 1.0,
+    );
+    _progressTreeAnimation = CurvedAnimation(
+      parent: _progressTreeController,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    _lastStep = widget.viewModel.currentStep;
+    _lastFilterSignature = _computeFilterSignature(widget.viewModel);
+    widget.viewModel.addListener(_onViewModelChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant RouteBuilderScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.viewModel != widget.viewModel) {
+      oldWidget.viewModel.removeListener(_onViewModelChanged);
+      widget.viewModel.addListener(_onViewModelChanged);
+      _lastStep = widget.viewModel.currentStep;
+      _lastFilterSignature = _computeFilterSignature(widget.viewModel);
+    }
+  }
+
+  @override
+  void dispose() {
+    _progressTreeAnimation.dispose();
+    _progressTreeController.dispose();
+    widget.viewModel.removeListener(_onViewModelChanged);
+    super.dispose();
+  }
+
+  void _setProgressTreeVisible(bool visible) {
+    if (_isProgressTreeVisible == visible || !mounted) {
+      return;
+    }
+    setState(() {
+      _isProgressTreeVisible = visible;
+    });
+    if (visible) {
+      _progressTreeController.forward();
+    } else {
+      _progressTreeController.reverse();
+    }
+  }
+
+  void _onViewModelChanged() {
+    bool shouldMakeVisible = false;
+    if (_lastStep != widget.viewModel.currentStep) {
+      _lastStep = widget.viewModel.currentStep;
+      shouldMakeVisible = true;
+    }
+    final currentFilterSignature = _computeFilterSignature(widget.viewModel);
+    if (_lastFilterSignature != currentFilterSignature) {
+      _lastFilterSignature = currentFilterSignature;
+      shouldMakeVisible = true;
+    }
+
+    if (shouldMakeVisible) {
+      _verticalScrollDelta = 0.0;
+      _setProgressTreeVisible(true);
+    }
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    // Sadece dikey kaydırmalar kontrol edilir (yatay şehir slider'ı kaydırılırken tetiklenmez)
+    if (notification.metrics.axis != Axis.vertical) {
+      return false;
+    }
+
+    if (notification.metrics.pixels <= 2.0) {
+      // Listenin en tepesine ulaşıldığında biriken deltayı sıfırla ve görünür yap
+      _verticalScrollDelta = 0.0;
+      _setProgressTreeVisible(true);
+      return false;
+    }
+
+    if (notification is UserScrollNotification) {
+      if (notification.direction == ScrollDirection.reverse &&
+          notification.metrics.pixels > 16.0) {
+        // Aşağı kaydırma -> Gizle
+        _verticalScrollDelta = 0.0;
+        _setProgressTreeVisible(false);
+      } else if (notification.direction == ScrollDirection.forward) {
+        // Yukarı kaydırma -> Göster
+        _verticalScrollDelta = 0.0;
+        _setProgressTreeVisible(true);
+      }
+    } else if (notification is ScrollUpdateNotification) {
+      // Mouse wheel / trackpad PointerScrollEvent, momentum ve kart üzeri kaydırmalar için
+      if (!notification.metrics.outOfRange &&
+          notification.metrics.maxScrollExtent > 0) {
+        final delta = notification.scrollDelta ?? 0.0;
+        if (delta > 0) {
+          _verticalScrollDelta = _verticalScrollDelta > 0
+              ? _verticalScrollDelta + delta
+              : delta;
+          if (_verticalScrollDelta >= 16.0 &&
+              notification.metrics.pixels > 16.0) {
+            _verticalScrollDelta = 0.0;
+            _setProgressTreeVisible(false);
+          }
+        } else if (delta < 0) {
+          _verticalScrollDelta = _verticalScrollDelta < 0
+              ? _verticalScrollDelta + delta
+              : delta;
+          if (_verticalScrollDelta <= -12.0) {
+            _verticalScrollDelta = 0.0;
+            _setProgressTreeVisible(true);
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
   Future<void> _pickCustomDateRange(BuildContext context) async {
     final now = DateTime.now();
-    final initialRange = viewModel.customDateRange ??
+    final initialRange = widget.viewModel.customDateRange ??
         DateTimeRange(
           start: now.add(const Duration(days: 7)),
           end: now.add(const Duration(days: 11)),
@@ -31,7 +175,7 @@ class RouteBuilderScreen extends StatelessWidget {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.dark(
+            colorScheme: ColorScheme.dark(
               primary: BeenHereColors.primaryCompass,
               onPrimary: Colors.white,
               surface: BeenHereColors.surface,
@@ -44,13 +188,13 @@ class RouteBuilderScreen extends StatelessWidget {
     );
 
     if (picked != null) {
-      viewModel.setCustomDateRange(picked);
+      widget.viewModel.setCustomDateRange(picked);
     }
   }
 
   void _handleBottomPrimaryAction(BuildContext context) {
-    if (viewModel.currentStep == RouteWizardStep.locations) {
-      if (!viewModel.hasAnyDestinationSelected) {
+    if (widget.viewModel.currentStep == RouteWizardStep.locations) {
+      if (!widget.viewModel.hasAnyDestinationSelected) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -62,12 +206,12 @@ class RouteBuilderScreen extends StatelessWidget {
         );
         return;
       }
-      viewModel.goToNextStep();
+      widget.viewModel.goToNextStep();
       return;
     }
 
-    if (viewModel.currentStep != RouteWizardStep.travelers) {
-      viewModel.goToNextStep();
+    if (widget.viewModel.currentStep != RouteWizardStep.travelers) {
+      widget.viewModel.goToNextStep();
       return;
     }
 
@@ -77,8 +221,8 @@ class RouteBuilderScreen extends StatelessWidget {
         behavior: SnackBarBehavior.floating,
         backgroundColor: BeenHereColors.surfaceElevated,
         content: Text(
-          '🧭 ${viewModel.totalSelectedCountryCount} Ülke, ${viewModel.totalSelectedCityCount} Şehir • ${viewModel.totalTravelersCount} Gezgin için rota destesi hazırlanıyor...',
-          style: const TextStyle(color: BeenHereColors.textPrimary),
+          '🧭 ${widget.viewModel.totalSelectedCountryCount} Ülke, ${widget.viewModel.totalSelectedCityCount} Şehir • ${widget.viewModel.totalTravelersCount} Gezgin için rota destesi hazırlanıyor...',
+          style: TextStyle(color: BeenHereColors.textPrimary),
         ),
       ),
     );
@@ -90,74 +234,123 @@ class RouteBuilderScreen extends StatelessWidget {
     final bottomSafe = MediaQuery.paddingOf(context).bottom;
     final bottomPadding = bottomSafe > 0 ? bottomSafe + 4.0 : 8.0;
 
-    return ListenableBuilder(
-      listenable: viewModel,
-      builder: (context, _) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // =================================================================
-            // 1. ÜSTTEKİ İLERLEME AĞACI
-            // =================================================================
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: _WizardTopProgressTree(
-                viewModel: viewModel,
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleScrollNotification,
+      child: ListenableBuilder(
+        listenable: widget.viewModel,
+        builder: (context, _) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // =================================================================
+              // 1. ÜSTTEKİ İLERLEME AĞACI (Scroll-down gizlenme / Scroll-up geri gelme)
+              // =================================================================
+              ColoredBox(
+                key: const ValueKey<String>('wizard-top-progress-tree-section'),
+                color: BeenHereColors.background,
+                child: AnimatedBuilder(
+                  animation: _progressTreeAnimation,
+                  builder: (context, child) {
+                    if (!_isProgressTreeVisible &&
+                        _progressTreeController.value == 0.0) {
+                      return const SizedBox.shrink();
+                    }
+                    final animValue =
+                        _progressTreeAnimation.value.clamp(0.0, 1.0);
+                    return ClipRect(
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        heightFactor: animValue,
+                        child: Transform.translate(
+                          offset: Offset(0, -(1.0 - animValue) * 12.0),
+                          child: Opacity(
+                            opacity: Curves.easeOut
+                                .transform(animValue)
+                                .clamp(0.0, 1.0),
+                            child: IgnorePointer(
+                              ignoring: !_isProgressTreeVisible,
+                              child: child,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                    child: _WizardTopProgressTree(
+                      viewModel: widget.viewModel,
+                    ),
+                  ),
+                ),
               ),
-            ),
 
-            // =================================================================
-            // 2. AKTİF ADIM GÖVDESİ (1.1 Seçili Konumlar, 1.2 Tarih, ...)
-            // =================================================================
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                child: _buildActiveStepBody(context),
+              // =================================================================
+              // 2. AKTİF ADIM GÖVDESİ (1.1 Seçili Konumlar, 1.2 Tarih, ...)
+              // =================================================================
+              Expanded(
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context).copyWith(
+                    dragDevices: const {
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.mouse,
+                      PointerDeviceKind.trackpad,
+                      PointerDeviceKind.stylus,
+                    },
+                  ),
+                  child: ClipRect(
+                    key: const ValueKey<String>('wizard-step-body-clip'),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      child: _buildActiveStepBody(context),
+                    ),
+                  ),
+                ),
               ),
-            ),
 
-            // =================================================================
-            // 3. ALT İLERLEME BARI: [ ← (Geri) ]   [ X Ülke, X Şehir Seçildi ]
-            // (Aşağıya tam yaslı, gereksiz alt boşluk kaldırıldı)
-            // =================================================================
-            Padding(
-              padding: EdgeInsets.fromLTRB(16, 6, 16, bottomPadding),
-              child: _WizardBottomNavigationBar(
-                viewModel: viewModel,
-                onTapPrevious: viewModel.goToPreviousStep,
-                onTapNext: () => _handleBottomPrimaryAction(context),
+              // =================================================================
+              // 3. ALT İLERLEME BARI: [ ← (Geri) ]   [ X Ülke, X Şehir Seçildi ]
+              // (Aşağıya tam yaslı, gereksiz alt boşluk kaldırıldı)
+              // =================================================================
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, 6, 16, bottomPadding),
+                child: _WizardBottomNavigationBar(
+                  viewModel: widget.viewModel,
+                  onTapPrevious: widget.viewModel.goToPreviousStep,
+                  onTapNext: () => _handleBottomPrimaryAction(context),
+                ),
               ),
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
   }
 
   Widget _buildActiveStepBody(BuildContext context) {
-    switch (viewModel.currentStep) {
+    switch (widget.viewModel.currentStep) {
       case RouteWizardStep.locations:
         return _StepOneLocationsExactLayout(
           key: const ValueKey<String>('wizard-step-locations'),
-          viewModel: viewModel,
+          viewModel: widget.viewModel,
         );
       case RouteWizardStep.dates:
         return _StepTwoDatesPlaceholderBody(
           key: const ValueKey<String>('wizard-step-dates'),
-          viewModel: viewModel,
+          viewModel: widget.viewModel,
           onPickCustomRange: () => _pickCustomDateRange(context),
         );
       case RouteWizardStep.budget:
         return _StepThreeBudgetPlaceholderBody(
           key: const ValueKey<String>('wizard-step-budget'),
-          viewModel: viewModel,
+          viewModel: widget.viewModel,
         );
       case RouteWizardStep.travelers:
         return _StepFourTravelersPlaceholderBody(
           key: const ValueKey<String>('wizard-step-travelers'),
-          viewModel: viewModel,
+          viewModel: widget.viewModel,
         );
     }
   }
@@ -313,14 +506,11 @@ class _WizardCompactStepIconItem extends StatelessWidget {
 }
 
 // =============================================================================
-// 2. YENİ AIRBNB MODELİ DÜZENİ:
-// 1. Satır: [ Ülke veya Şehir Ara... ] (Airbnb Arama Çubuğu + Filtre Slider + Tümünü Seç)
-// 2. Satır (Açılır Panel): Liquid Glass Kıta ve Alt Bölge Çipleri
-// 3. Satır (Aktif Filtreler): [Avrupa ✕] [Batı Avrupa ✕] [Dismissible Chips]
-// 4. Gövde: [İspanya Banner] -> [Sevilla] [Cadiz] [Madrid] Slider'ı
-// 5. Gövde: [Türkiye Banner] -> [İstanbul] [İzmir] [Ankara] Slider'ı
+// 2. ADIM 1 LOKASYON SEÇİM DÜZENİ:
+// 1. Satır: Ortak `GeographyTreeFilterBar` (Büyük arama çubuğu + Panel + Filtre Hapları)
+// 2. Gövde: Doğrudan Ülke 1, Ülke 2... (| Bayrak | Ülke Adı |) ve Yatay Şehir Slider'ı
 // =============================================================================
-class _StepOneLocationsExactLayout extends StatefulWidget {
+class _StepOneLocationsExactLayout extends StatelessWidget {
   const _StepOneLocationsExactLayout({
     super.key,
     required this.viewModel,
@@ -329,131 +519,58 @@ class _StepOneLocationsExactLayout extends StatefulWidget {
   final RouteBuilderViewModel viewModel;
 
   @override
-  State<_StepOneLocationsExactLayout> createState() =>
-      _StepOneLocationsExactLayoutState();
-}
-
-class _StepOneLocationsExactLayoutState
-    extends State<_StepOneLocationsExactLayout> {
-  late final TextEditingController _searchController;
-  late final FocusNode _searchFocusNode;
-  bool _isFilterPanelOpen = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _searchController = TextEditingController(
-      text: widget.viewModel.searchFilterQuery,
-    );
-    _searchFocusNode = FocusNode();
-    _searchFocusNode.addListener(() {
-      if (_searchFocusNode.hasFocus && !_isFilterPanelOpen) {
-        setState(() => _isFilterPanelOpen = true);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _searchFocusNode.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final vm = widget.viewModel;
-    final continents = RouteBuilderViewModel.continentsCatalog;
-    final subRegions = vm.currentSubRegions;
+    final vm = viewModel;
     final countries = vm.displayedCountries;
 
-    const double countryBannerHeight = 92.0;
-    const double cityCardWidth = 98.0;
-    const double cityCardHeight = 104.0;
+    const double countryBannerHeight = 90.0;
+    const double cityCardWidth = 220.0;
+    const double cityCardHeight = 156.0;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 20),
+      clipBehavior: Clip.hardEdge,
       physics: const BouncingScrollPhysics(
         parent: AlwaysScrollableScrollPhysics(),
       ),
       children: [
         // ---------------------------------------------------------------------
-        // 1. AIRBNB MODELİ ARAMA ÇUBUĞU (Stepper'ın hemen altında)
+        // 1. ORTAK ÜLKE VE ŞEHİR ARAMA & FİLTRE ÇUBUĞU (GeographyTreeFilterBar)
         // ---------------------------------------------------------------------
-        _AirbnbLocationSearchBar(
-          controller: _searchController,
-          focusNode: _searchFocusNode,
-          viewModel: vm,
-          isFilterPanelOpen: _isFilterPanelOpen,
-          onToggleFilterPanel: () {
-            HapticFeedback.lightImpact();
-            setState(() => _isFilterPanelOpen = !_isFilterPanelOpen);
-          },
-          onClearQuery: () {
-            _searchController.clear();
-            vm.clearSearchFilter();
-          },
+        GeographyTreeFilterBar(
+          filterModel: vm,
+          resultCountLabelBuilder: () => '${vm.displayedCountries.length} Ülke',
+          searchHintText: 'Ülke veya şehir ismi ile ara...',
+          showNearbyButton: false,
+          showBudgetFilter: false,
+          showTreeDrawerButton: false,
+          searchBarKey: const ValueKey<String>('route_builder_search_bar_tap'),
         ),
-
-        // ---------------------------------------------------------------------
-        // 2. ARAMA YA DA BUTONA BASILDIĞINDA AÇILAN KITA & BÖLGE ÇİPLERİ PANELİ
-        // (Liquid Glass Çipler)
-        // ---------------------------------------------------------------------
-        AnimatedSize(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeInOutCubic,
-          child: _isFilterPanelOpen
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: _FilterChipsPickerPanel(
-                    viewModel: vm,
-                    continents: continents,
-                    subRegions: subRegions,
-                  ),
-                )
-              : const SizedBox.shrink(),
-        ),
-
-        // ---------------------------------------------------------------------
-        // 3. AKTİF FİLTRE ÇİPLERİ VE HIZLI KALDIRMA (Dismissible Chips)
-        // (Kıta, bölge veya arama aktif olduğunda arama kutusunun altında belirir)
-        // ---------------------------------------------------------------------
-        if (vm.hasActiveFilter) ...[
-          const SizedBox(height: 8),
-          _ActiveFilterChipsRow(
-            viewModel: vm,
-            onClearSearch: () {
-              _searchController.clear();
-              vm.clearSearchFilter();
-            },
-            onClearAll: () {
-              _searchController.clear();
-              vm.clearAllFilters();
-            },
-          ),
-        ],
 
         const SizedBox(height: 12),
 
         // ---------------------------------------------------------------------
-        // 4. GÖVDE ALANI: ÜLKE BANNERLARI VE ŞEHİR SLIDER'LARI
+        // 2. GÖVDE ALANI: DOĞRUDAN ÜLKE BANNERLARI VE ŞEHİR SLIDER'LARI
         // ---------------------------------------------------------------------
         if (countries.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: BeenHereColors.surface.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: BeenHereColors.borderSubtle.withValues(alpha: 0.6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: BeenHereColors.surface.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: BeenHereColors.borderSubtle.withValues(alpha: 0.6),
+                ),
               ),
-            ),
-            child: const Center(
-              child: Text(
-                'Aradığınız filtreye uygun ülke veya şehir bulunamadı.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: BeenHereColors.textSecondary,
+              child: Center(
+                child: Text(
+                  'Aradığınız filtreye uygun ülke veya şehir bulunamadı.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: BeenHereColors.textSecondary,
+                  ),
                 ),
               ),
             ),
@@ -462,11 +579,6 @@ class _StepOneLocationsExactLayoutState
           Column(
             children: [
               for (int i = 0; i < countries.length; i++) ...[
-                // Ülke Satırı Başlığı ve Seçim Özeti (Sadece seçim yapıldığında açılır)
-                _CountrySelectionHeaderBadge(
-                  country: countries[i],
-                  viewModel: vm,
-                ),
                 _CountryAndCitiesSection(
                   country: countries[i],
                   viewModel: vm,
@@ -500,603 +612,10 @@ class _StepOneLocationsExactLayoutState
         backgroundColor: BeenHereColors.surfaceElevated,
         content: Text(
           message,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11.5,
             fontWeight: FontWeight.w600,
             color: BeenHereColors.textPrimary,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// =============================================================================
-// YENİ WIDGETLAR: AIRBNB ARAMA ÇUBUĞU, ÇİP PANELİ VE AKTİF ÇİPLER
-// =============================================================================
-class _AirbnbLocationSearchBar extends StatelessWidget {
-  const _AirbnbLocationSearchBar({
-    required this.controller,
-    required this.focusNode,
-    required this.viewModel,
-    required this.isFilterPanelOpen,
-    required this.onToggleFilterPanel,
-    required this.onClearQuery,
-  });
-
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final RouteBuilderViewModel viewModel;
-  final bool isFilterPanelOpen;
-  final VoidCallback onToggleFilterPanel;
-  final VoidCallback onClearQuery;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool hasFocus = focusNode.hasFocus;
-    final bool hasFilterActive = viewModel.hasActiveFilter;
-
-    return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: BeenHereColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: (hasFocus || isFilterPanelOpen)
-              ? BeenHereColors.primaryCompass.withValues(alpha: 0.85)
-              : (hasFilterActive
-                  ? BeenHereColors.verifiedEmerald.withValues(alpha: 0.6)
-                  : BeenHereColors.borderSubtle.withValues(alpha: 0.9)),
-          width: (hasFocus || isFilterPanelOpen) ? 1.2 : 0.9,
-        ),
-        boxShadow: (hasFocus || isFilterPanelOpen)
-            ? [
-                BoxShadow(
-                  color: BeenHereColors.primaryCompass.withValues(alpha: 0.14),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : null,
-      ),
-      child: Row(
-        children: [
-          // Sol Arama İkonu
-          PhosphorIcon(
-            PhosphorIcons.magnifyingGlass(
-              hasFocus || controller.text.isNotEmpty
-                  ? PhosphorIconsStyle.bold
-                  : PhosphorIconsStyle.regular,
-            ),
-            size: 16,
-            color: hasFocus || controller.text.isNotEmpty
-                ? BeenHereColors.primaryCompass
-                : BeenHereColors.textSecondary,
-          ),
-          const SizedBox(width: 8),
-
-          // Orta Arama Inputu
-          Expanded(
-            child: TextField(
-              controller: controller,
-              focusNode: focusNode,
-              onTap: () {
-                if (!isFilterPanelOpen) {
-                  onToggleFilterPanel();
-                }
-              },
-              onChanged: viewModel.updateSearchFilterQuery,
-              style: const TextStyle(
-                fontSize: 12.5,
-                color: BeenHereColors.textPrimary,
-                fontWeight: FontWeight.w600,
-              ),
-              decoration: const InputDecoration(
-                hintText: 'Ülke veya şehir ara...',
-                hintStyle: TextStyle(
-                  fontSize: 12,
-                  color: BeenHereColors.textSecondary,
-                ),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-          ),
-
-          // Arama Temizleme Butonu (✕)
-          if (controller.text.isNotEmpty)
-            GestureDetector(
-              onTap: onClearQuery,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: PhosphorIcon(
-                  PhosphorIcons.xCircle(PhosphorIconsStyle.fill),
-                  size: 16,
-                  color: BeenHereColors.textSecondary,
-                ),
-              ),
-            ),
-
-          // Ayırıcı Çizgi
-          Container(
-            width: 1,
-            height: 18,
-            color: BeenHereColors.borderSubtle,
-          ),
-          const SizedBox(width: 6),
-
-          // Filtre İkonu (Kıta ve Bölge Panelini Aç / Kapa)
-          Tooltip(
-            message: isFilterPanelOpen
-                ? 'Filtreleri Gizle'
-                : 'Kıta ve Bölge Filtreleri',
-            child: InkWell(
-              onTap: onToggleFilterPanel,
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: isFilterPanelOpen || viewModel.activeContinentId != null
-                      ? BeenHereColors.primaryCompass.withValues(alpha: 0.16)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: PhosphorIcon(
-                  PhosphorIcons.slidersHorizontal(
-                    isFilterPanelOpen
-                        ? PhosphorIconsStyle.fill
-                        : PhosphorIconsStyle.regular,
-                  ),
-                  size: 16,
-                  color: isFilterPanelOpen || viewModel.activeContinentId != null
-                      ? BeenHereColors.primaryCompass
-                      : BeenHereColors.textSecondary,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-
-          // Sağda hızlı Tümünü Seç / Temizle Butonu
-          Tooltip(
-            message: viewModel.areAllCurrentLocationsSelected
-                ? 'Tüm Seçimleri Temizle'
-                : 'Görünenlerin Tümünü Seç',
-            child: InkWell(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                viewModel.toggleSelectAllInCurrentView();
-              },
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-                child: PhosphorIcon(
-                  viewModel.areAllCurrentLocationsSelected
-                      ? PhosphorIcons.checkSquare(PhosphorIconsStyle.fill)
-                      : PhosphorIcons.square(PhosphorIconsStyle.regular),
-                  size: 15,
-                  color: viewModel.areAllCurrentLocationsSelected
-                      ? BeenHereColors.verifiedEmerald
-                      : BeenHereColors.primaryCompass,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterChipsPickerPanel extends StatelessWidget {
-  const _FilterChipsPickerPanel({
-    required this.viewModel,
-    required this.continents,
-    required this.subRegions,
-  });
-
-  final RouteBuilderViewModel viewModel;
-  final List<BuilderContinentCatalogItem> continents;
-  final List<BuilderSubRegionCatalogItem> subRegions;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: BeenHereColors.surface.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: BeenHereColors.borderSubtle.withValues(alpha: 0.8),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.25),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 1. SATIR: KITA ÇİPLERİ (Dünya / Tümü, Avrupa, Asya, Afrika...)
-          SizedBox(
-            height: 32,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              children: [
-                _LiquidGlassChip(
-                  label: 'Tüm Kıtalar',
-                  icon: PhosphorIcons.globeHemisphereWest(
-                    viewModel.activeContinentId == null
-                        ? PhosphorIconsStyle.fill
-                        : PhosphorIconsStyle.regular,
-                  ),
-                  isSelected: viewModel.activeContinentId == null,
-                  activeColor: BeenHereColors.verifiedEmerald,
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    viewModel.clearContinentFilter();
-                  },
-                ),
-                const SizedBox(width: 6),
-                for (final c in continents) ...[
-                  _LiquidGlassChip(
-                    label: c.name,
-                    isSelected: viewModel.activeContinentId == c.id,
-                    activeColor: BeenHereColors.verifiedEmerald,
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      viewModel.selectContinent(c.id);
-                    },
-                  ),
-                  const SizedBox(width: 6),
-                ],
-              ],
-            ),
-          ),
-
-          // 2. SATIR: ALT BÖLGE ÇİPLERİ (Eğer seçili bir kıta varsa)
-          if (viewModel.activeContinent != null && subRegions.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Container(
-              height: 1,
-              color: BeenHereColors.borderSubtle.withValues(alpha: 0.4),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 30,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                children: [
-                  _LiquidGlassChip(
-                    label: 'Tüm ${viewModel.activeContinent!.name}',
-                    icon: PhosphorIcons.mapPin(
-                      viewModel.activeSubRegionId == null
-                          ? PhosphorIconsStyle.fill
-                          : PhosphorIconsStyle.regular,
-                    ),
-                    isSelected: viewModel.activeSubRegionId == null,
-                    activeColor: BeenHereColors.primaryCompass,
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      viewModel.clearSubRegionFilter();
-                    },
-                  ),
-                  const SizedBox(width: 6),
-                  for (final sr in subRegions) ...[
-                    _LiquidGlassChip(
-                      label: sr.name,
-                      isSelected: viewModel.activeSubRegionId == sr.id,
-                      activeColor: BeenHereColors.primaryCompass,
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        viewModel.selectSubRegion(sr.id);
-                      },
-                    ),
-                    const SizedBox(width: 6),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _LiquidGlassChip extends StatelessWidget {
-  const _LiquidGlassChip({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-    this.icon,
-    this.activeColor = BeenHereColors.verifiedEmerald,
-  });
-
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-  final PhosphorIconData? icon;
-  final Color activeColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? activeColor.withValues(alpha: 0.18)
-              : BeenHereColors.surfaceElevated.withValues(alpha: 0.65),
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(
-            color: isSelected
-                ? activeColor
-                : BeenHereColors.borderSubtle.withValues(alpha: 0.75),
-            width: isSelected ? 1.2 : 0.8,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: activeColor.withValues(alpha: 0.22),
-                    blurRadius: 5,
-                    offset: const Offset(0, 1),
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              PhosphorIcon(
-                icon!,
-                size: 13,
-                color: isSelected ? activeColor : BeenHereColors.textSecondary,
-              ),
-              const SizedBox(width: 5),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? Colors.white : BeenHereColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ActiveFilterChipsRow extends StatelessWidget {
-  const _ActiveFilterChipsRow({
-    required this.viewModel,
-    required this.onClearSearch,
-    required this.onClearAll,
-  });
-
-  final RouteBuilderViewModel viewModel;
-  final VoidCallback onClearSearch;
-  final VoidCallback onClearAll;
-
-  @override
-  Widget build(BuildContext context) {
-    int activeCount = 0;
-    if (viewModel.activeContinent != null) activeCount++;
-    if (viewModel.activeSubRegion != null) activeCount++;
-    if (viewModel.searchFilterQuery.isNotEmpty) activeCount++;
-
-    return SizedBox(
-      height: 28,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        children: [
-          // 1. Kıta Filtresi Çipi
-          if (viewModel.activeContinent != null) ...[
-            _DismissibleActiveFilterChip(
-              label: viewModel.activeContinent!.name,
-              icon: PhosphorIcons.globeHemisphereWest(PhosphorIconsStyle.fill),
-              color: BeenHereColors.verifiedEmerald,
-              onDismiss: () {
-                HapticFeedback.lightImpact();
-                viewModel.clearContinentFilter();
-              },
-            ),
-            const SizedBox(width: 6),
-          ],
-
-          // 2. Alt Bölge Filtresi Çipi
-          if (viewModel.activeSubRegion != null) ...[
-            _DismissibleActiveFilterChip(
-              label: viewModel.activeSubRegion!.name,
-              icon: PhosphorIcons.mapPin(PhosphorIconsStyle.fill),
-              color: BeenHereColors.primaryCompass,
-              onDismiss: () {
-                HapticFeedback.lightImpact();
-                viewModel.clearSubRegionFilter();
-              },
-            ),
-            const SizedBox(width: 6),
-          ],
-
-          // 3. Arama Metni Çipi
-          if (viewModel.searchFilterQuery.isNotEmpty) ...[
-            _DismissibleActiveFilterChip(
-              label: '"${viewModel.searchFilterQuery}"',
-              icon: PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
-              color: BeenHereColors.goldLeague,
-              onDismiss: () {
-                HapticFeedback.lightImpact();
-                onClearSearch();
-              },
-            ),
-            const SizedBox(width: 6),
-          ],
-
-          // 4. Tümünü Temizle Butonu (2 veya daha fazla filtre varsa)
-          if (activeCount >= 2) ...[
-            GestureDetector(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                onClearAll();
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: BeenHereColors.surface.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: BeenHereColors.borderSubtle.withValues(alpha: 0.6),
-                  ),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Tümünü Sıfırla',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: BeenHereColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _DismissibleActiveFilterChip extends StatelessWidget {
-  const _DismissibleActiveFilterChip({
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.onDismiss,
-  });
-
-  final String label;
-  final PhosphorIconData icon;
-  final Color color;
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onDismiss,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: color.withValues(alpha: 0.55),
-            width: 0.9,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            PhosphorIcon(
-              icon,
-              size: 12,
-              color: color,
-            ),
-            const SizedBox(width: 5),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(width: 5),
-            PhosphorIcon(
-              PhosphorIcons.x(PhosphorIconsStyle.bold),
-              size: 11,
-              color: color,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Ülke satırının hemen üstünde yer alan ve seçilen şehirleri gösteren özet başlık:
-/// Sadece seçim yapıldığında görünür (Örn: "Türkiye -> Tümü" veya "Türkiye -> İzmir, Ankara")
-class _CountrySelectionHeaderBadge extends StatelessWidget {
-  const _CountrySelectionHeaderBadge({
-    required this.country,
-    required this.viewModel,
-  });
-
-  final BuilderCountryCatalogItem country;
-  final RouteBuilderViewModel viewModel;
-
-  @override
-  Widget build(BuildContext context) {
-    final isSelected = viewModel.isCountryOrAnyCitySelected(country);
-    if (!isSelected) {
-      return const SizedBox.shrink();
-    }
-
-    final summaryText = viewModel.getCountrySelectionSummaryText(country);
-
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
-          decoration: BoxDecoration(
-            color: BeenHereColors.verifiedEmerald.withValues(alpha: 0.16),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: BeenHereColors.verifiedEmerald.withValues(alpha: 0.55),
-              width: 0.8,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              PhosphorIcon(
-                PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
-                size: 13,
-                color: BeenHereColors.verifiedEmerald,
-              ),
-              const SizedBox(width: 5),
-              Text(
-                summaryText,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: BeenHereColors.verifiedEmerald,
-                  letterSpacing: -0.2,
-                ),
-              ),
-            ],
           ),
         ),
       ),
@@ -1126,6 +645,8 @@ class _CountryAndCitiesSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCountrySelected = viewModel.isCountrySelected(country.code);
+    final areAllCitiesSelected =
+        viewModel.areAllCitiesInCountrySelected(country);
     final cities = viewModel.getDisplayedCitiesForCountry(country);
 
     return Column(
@@ -1133,22 +654,27 @@ class _CountryAndCitiesSection extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         // 1. ÜLKE KARTI: Satırın tamamına yayılan estetik Banner
-        _CountryBannerCard(
-          country: country,
-          height: countryBannerHeight,
-          isSelected: isCountrySelected,
-          onTap: () {
-            HapticFeedback.selectionClick();
-            viewModel.toggleCountrySelection(country);
-          },
-          onLongPress: onCountryLongPress,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _CountryBannerCard(
+            country: country,
+            height: countryBannerHeight,
+            isSelected: isCountrySelected,
+            areAllCitiesSelected: areAllCitiesSelected,
+            selectedCityNames: viewModel.getSelectedCityNamesForCountry(country),
+            onTap: () {
+              HapticFeedback.selectionClick();
+              viewModel.toggleCountrySelection(country);
+            },
+            onLongPress: onCountryLongPress,
+          ),
         ),
 
         // 2. HEMEN ALTINDA: O ÜLKENİN ŞEHİRLERİ (Yatay Slider)
         if (cities.isNotEmpty) ...[
           const SizedBox(height: 8),
           SizedBox(
-            height: cityCardHeight,
+            height: cityCardHeight + 16,
             child: ScrollConfiguration(
               behavior: ScrollConfiguration.of(context).copyWith(
                 dragDevices: const {
@@ -1161,8 +687,13 @@ class _CountryAndCitiesSection extends StatelessWidget {
                 key: PageStorageKey<String>('cities-row-${country.code}'),
                 scrollDirection: Axis.horizontal,
                 physics: const BouncingScrollPhysics(),
+                clipBehavior: Clip.none,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 itemCount: cities.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
                 itemBuilder: (context, idx) {
                   final city = cities[idx];
                   final isCitySelected = viewModel.isCitySelected(city);
@@ -1173,8 +704,6 @@ class _CountryAndCitiesSection extends StatelessWidget {
                       title: city.name,
                       imageUrl: city.imageUrl,
                       isSelected: isCitySelected,
-                      selectedTopBadge:
-                          isCitySelected ? '${city.name} Seçili' : null,
                       onTap: () {
                         HapticFeedback.selectionClick();
                         viewModel.toggleCitySelection(city);
@@ -1191,12 +720,15 @@ class _CountryAndCitiesSection extends StatelessWidget {
   }
 }
 
-/// Satırın tamamına yayılan geniş Ülke Banner Kartı
+/// Satırın tamamına yayılan geniş Ülke Banner Kartı:
+/// Sol tarafta özel dikey Bayrak Bölmesi (Flag Strip) | Sağ tarafta fotoğraflı Ülke Banner'ı
 class _CountryBannerCard extends StatelessWidget {
   const _CountryBannerCard({
     required this.country,
     required this.height,
     required this.isSelected,
+    required this.areAllCitiesSelected,
+    required this.selectedCityNames,
     required this.onTap,
     required this.onLongPress,
   });
@@ -1204,171 +736,294 @@ class _CountryBannerCard extends StatelessWidget {
   final BuilderCountryCatalogItem country;
   final double height;
   final bool isSelected;
+  final bool areAllCitiesSelected;
+  final List<String> selectedCityNames;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
+    final flagBorderColor = Colors.white.withValues(alpha: 0.16);
+    const double flagBorderWidth = 0.9;
+
+    final bannerBorderColor = Colors.white.withValues(alpha: 0.16);
+    const double bannerBorderWidth = 0.9;
+
     return GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
         height: height,
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        transform: isSelected
+            ? Matrix4.translationValues(0, -4.0, 0)
+            : Matrix4.identity(),
         decoration: BoxDecoration(
+          color: BeenHereColors.surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isSelected
-                ? BeenHereColors.verifiedEmerald
-                : Colors.white.withValues(alpha: 0.16),
-            width: isSelected ? 2.0 : 0.9,
-          ),
           boxShadow: [
-            BoxShadow(
-              color: isSelected
-                  ? BeenHereColors.verifiedEmerald.withValues(alpha: 0.22)
-                  : Colors.black.withValues(alpha: 0.24),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
+            if (isSelected) ...[
+              BoxShadow(
+                color: BeenHereColors.verifiedEmerald.withValues(alpha: 0.38),
+                blurRadius: 18,
+                spreadRadius: 1,
+                offset: const Offset(0, 8),
+              ),
+              BoxShadow(
+                color: BeenHereColors.verifiedEmerald.withValues(alpha: 0.18),
+                blurRadius: 28,
+                spreadRadius: 2,
+                offset: const Offset(0, 14),
+              ),
+            ] else ...[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ],
         ),
         clipBehavior: Clip.antiAlias,
-        child: Stack(
-          fit: StackFit.expand,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Image.network(
-              country.imageUrl,
-              fit: BoxFit.cover,
-              cacheWidth: 640,
-              gaplessPlayback: true,
-              filterQuality: FilterQuality.low,
-              errorBuilder: (_, _, _) => Container(
-                color: const Color(0xFF16273D),
-              ),
-            ),
-
-            // Karartma ve Degrade Katmanı
-            DecoratedBox(
+            // =================================================================
+            // 1. SOL: DİKEY BÖLME — BAYRAK ALANI (90° Sola Döndürülmüş Dikey Bayrak)
+            // =================================================================
+            Container(
+              width: 50,
+              clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: const [0.0, 0.45, 1.0],
-                  colors: [
-                    isSelected
-                        ? const Color(0x6A06291E)
-                        : const Color(0x32060B13),
-                    isSelected
-                        ? const Color(0x4A06291E)
-                        : const Color(0x18060B13),
-                    const Color(0xD8060B13),
-                  ],
+                color: areAllCitiesSelected
+                    ? const Color(0xFF06291E).withValues(alpha: 0.92)
+                    : const Color(0xFF0F1B2B).withValues(alpha: 0.95),
+                border: Border(
+                  left: BorderSide(
+                    color: flagBorderColor,
+                    width: flagBorderWidth,
+                  ),
+                  top: BorderSide(
+                    color: flagBorderColor,
+                    width: flagBorderWidth,
+                  ),
+                  bottom: BorderSide(
+                    color: flagBorderColor,
+                    width: flagBorderWidth,
+                  ),
+                  right: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.14),
+                    width: 1.0,
+                  ),
                 ),
               ),
-            ),
-
-            // Üst Sol: Seçili Rozeti (Taslaktaki gibi: "İspanya Seçili")
-            if (isSelected)
-              Positioned(
-                top: 8,
-                left: 10,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 3.5,
-                  ),
-                  decoration: BoxDecoration(
-                    color:
-                        BeenHereColors.verifiedEmerald.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      PhosphorIcon(
-                        PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
-                        size: 11,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${country.name} Seçili',
-                        style: const TextStyle(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  RotatedBox(
+                    quarterTurns: 3,
+                    child: Image.network(
+                      'https://flagcdn.com/w160/${country.code.toLowerCase()}.png',
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, _, _) => Center(
+                        child: Text(
+                          country.flagEmoji,
+                          style: const TextStyle(fontSize: 26),
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
 
-            // Üst Sağ: Bayrak ve Basılı Tutma İpucu Rozeti
-            Positioned(
-              top: 8,
-              right: 10,
+                  // Bayrak üzeri gölge & tint katmanı (aşırı çiğ parlamayı önler, derinlik katar)
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        stops: const [0.0, 0.45, 1.0],
+                        colors: [
+                          areAllCitiesSelected
+                              ? const Color(0x6006291E)
+                              : const Color(0x55000000),
+                          areAllCitiesSelected
+                              ? const Color(0x3506291E)
+                              : const Color(0x30000000),
+                          areAllCitiesSelected
+                              ? const Color(0x7006291E)
+                              : const Color(0x65000000),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Sağ sınır boyunca yumuşak iç gölge (Banner geçiş derinliği için)
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.28),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // =================================================================
+            // 2. SAĞ: FOTOĞRAFLI BANNER (Ülke Fotoğrafı, Degrade, İsim & Rozet)
+            // =================================================================
+            Expanded(
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 3,
-                ),
+                clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.12),
-                    width: 0.6,
+                  border: Border(
+                    top: BorderSide(
+                      color: bannerBorderColor,
+                      width: bannerBorderWidth,
+                    ),
+                    bottom: BorderSide(
+                      color: bannerBorderColor,
+                      width: bannerBorderWidth,
+                    ),
+                    right: BorderSide(
+                      color: bannerBorderColor,
+                      width: bannerBorderWidth,
+                    ),
                   ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                child: Stack(
+                  fit: StackFit.expand,
                   children: [
-                    PhosphorIcon(
-                      PhosphorIcons.flag(PhosphorIconsStyle.regular),
-                      size: 10,
-                      color: Colors.white70,
+                    Image.network(
+                      country.imageUrl,
+                      fit: BoxFit.cover,
+                      cacheWidth: 640,
+                      gaplessPlayback: true,
+                    filterQuality: FilterQuality.low,
+                    errorBuilder: (_, _, _) => Container(
+                      color: const Color(0xFF16273D),
                     ),
-                    const SizedBox(width: 3.5),
-                    Text(
-                      country.flagEmoji,
-                      style: const TextStyle(fontSize: 10.5),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+                  ),
 
-            // Sol Alt: Ülke İsmi (Taslaktaki gibi ferah ve net: "İspanya")
-            Positioned(
-              left: 12,
-              bottom: 9,
-              right: 12,
-              child: Text(
-                country.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  letterSpacing: -0.3,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black54,
-                      offset: Offset(0, 1),
-                      blurRadius: 4,
+                  // Karartma ve Degrade Katmanı
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        stops: const [0.0, 0.45, 1.0],
+                        colors: [
+                          isSelected
+                              ? const Color(0xB806291E)
+                              : const Color(0xB0060B13),
+                          isSelected
+                              ? const Color(0x6006291E)
+                              : const Color(0x45060B13),
+                          isSelected
+                              ? const Color(0x7506291E)
+                              : const Color(0x75060B13),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+
+                  // Üst Sağ: Şehir Sayısı Rozeti
+                  Positioned(
+                    top: 8,
+                    right: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2.5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          width: 0.6,
+                        ),
+                      ),
+                      child: Text(
+                        '${country.cities.length} Şehir',
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Sol Alt: Ülke İsmi & Altında Seçilen Şehirler Listesi
+                  Positioned(
+                    left: 12,
+                    bottom: 8,
+                    right: 12,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          country.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: -0.3,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black87,
+                                offset: Offset(0, 1),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (selectedCityNames.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            selectedCityNames.join(', '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: BeenHereColors.verifiedEmerald,
+                              letterSpacing: -0.2,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black87,
+                                  offset: Offset(0, 1),
+                                  blurRadius: 3,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -1378,14 +1033,12 @@ class _LocationPhotoCard extends StatelessWidget {
     required this.title,
     required this.imageUrl,
     required this.isSelected,
-    this.selectedTopBadge,
     required this.onTap,
   });
 
   final String title;
   final String imageUrl;
   final bool isSelected;
-  final String? selectedTopBadge;
   final VoidCallback onTap;
 
   @override
@@ -1394,22 +1047,37 @@ class _LocationPhotoCard extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        transform: isSelected
+            ? Matrix4.translationValues(0, -4.0, 0)
+            : Matrix4.identity(),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected
-                ? BeenHereColors.verifiedEmerald
-                : Colors.white.withValues(alpha: 0.16),
-            width: isSelected ? 2.0 : 0.9,
+            color: Colors.white.withValues(alpha: 0.16),
+            width: 0.9,
           ),
           boxShadow: [
-            BoxShadow(
-              color: isSelected
-                  ? BeenHereColors.verifiedEmerald.withValues(alpha: 0.22)
-                  : Colors.black.withValues(alpha: 0.24),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
+            if (isSelected) ...[
+              BoxShadow(
+                color: BeenHereColors.verifiedEmerald.withValues(alpha: 0.38),
+                blurRadius: 18,
+                spreadRadius: 1,
+                offset: const Offset(0, 8),
+              ),
+              BoxShadow(
+                color: BeenHereColors.verifiedEmerald.withValues(alpha: 0.18),
+                blurRadius: 28,
+                spreadRadius: 2,
+                offset: const Offset(0, 14),
+              ),
+            ] else ...[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ],
         ),
         clipBehavior: Clip.antiAlias,
@@ -1419,7 +1087,7 @@ class _LocationPhotoCard extends StatelessWidget {
             Image.network(
               imageUrl,
               fit: BoxFit.cover,
-              cacheWidth: 320,
+              cacheWidth: 640,
               gaplessPlayback: true,
               filterQuality: FilterQuality.low,
               errorBuilder: (_, _, _) => Container(
@@ -1433,75 +1101,43 @@ class _LocationPhotoCard extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  stops: const [0.0, 0.45, 1.0],
+                  stops: const [0.0, 0.40, 1.0],
                   colors: [
                     isSelected
-                        ? const Color(0x6A06291E)
-                        : const Color(0x32060B13),
+                        ? const Color(0x6506291E)
+                        : const Color(0x35060B13),
                     isSelected
-                        ? const Color(0x4A06291E)
-                        : const Color(0x18060B13),
-                    const Color(0xD8060B13),
+                        ? const Color(0x3506291E)
+                        : const Color(0x10060B13),
+                    isSelected
+                        ? const Color(0xEB06291E)
+                        : const Color(0xDE060B13),
                   ],
                 ),
               ),
             ),
 
-            // Üstteki Seçili İbaresi (Taslaktaki gibi: "Avrupa seçili iken", "Madrid Seçili" vb.)
-            if (isSelected && selectedTopBadge != null)
-              Positioned(
-                top: 5,
-                left: 5,
-                right: 5,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 2.5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: BeenHereColors.verifiedEmerald.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      PhosphorIcon(
-                        PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
-                        size: 9.5,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 3),
-                      Expanded(
-                        child: Text(
-                          selectedTopBadge!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 8.5,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-            // Sol Alt: İsim (Avrupa, Sevilla, Cadiz, Madrid...)
+            // Sol Alt: İsim (Sevilla, Cadiz, Madrid...)
             Positioned(
-              left: 7,
-              right: 7,
-              bottom: 6,
+              left: 10,
+              right: 10,
+              bottom: 8,
               child: Text(
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: 14.5,
                   fontWeight: FontWeight.w800,
                   color: Colors.white,
-                  letterSpacing: -0.2,
+                  letterSpacing: -0.3,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black87,
+                      offset: Offset(0, 1),
+                      blurRadius: 4,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1544,6 +1180,7 @@ class _WizardBottomNavigationBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool canGoBack = viewModel.currentStep != RouteWizardStep.locations;
+    final bool canClear = viewModel.hasAnyDestinationSelected;
 
     return Row(
       children: [
@@ -1555,7 +1192,7 @@ class _WizardBottomNavigationBar extends StatelessWidget {
             onTap: canGoBack ? onTapPrevious : null,
             borderRadius: BorderRadius.circular(14),
             child: Container(
-              width: 52,
+              width: 48,
               height: 46,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
@@ -1568,7 +1205,7 @@ class _WizardBottomNavigationBar extends StatelessWidget {
               child: Center(
                 child: PhosphorIcon(
                   PhosphorIcons.arrowLeft(PhosphorIconsStyle.bold),
-                  size: 19,
+                  size: 18,
                   color: canGoBack
                       ? BeenHereColors.textPrimary
                       : BeenHereColors.textSecondary.withValues(alpha: 0.35),
@@ -1578,7 +1215,72 @@ class _WizardBottomNavigationBar extends StatelessWidget {
           ),
         ),
 
-        const SizedBox(width: 12),
+        const SizedBox(width: 8),
+
+        // Orta: Seçimleri Temizle Butonu
+        Tooltip(
+          message: 'Seçimleri Temizle',
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 180),
+            opacity: canClear ? 1.0 : 0.4,
+            child: Material(
+              key: const ValueKey<String>('wizard-clear-selections-button'),
+              color: BeenHereColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                onTap: canClear
+                    ? () {
+                        HapticFeedback.lightImpact();
+                        viewModel.clearAllDestinationSelections();
+                        if (viewModel.currentStep != RouteWizardStep.locations) {
+                          viewModel.goToStep(RouteWizardStep.locations);
+                        }
+                      }
+                    : null,
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  height: 46,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: canClear
+                          ? BeenHereColors.borderSubtle
+                          : BeenHereColors.borderSubtle.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      PhosphorIcon(
+                        PhosphorIcons.arrowCounterClockwise(
+                          PhosphorIconsStyle.bold,
+                        ),
+                        size: 16,
+                        color: canClear
+                            ? BeenHereColors.textPrimary
+                            : BeenHereColors.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Temizle',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: canClear
+                              ? BeenHereColors.textPrimary
+                              : BeenHereColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        const SizedBox(width: 8),
 
         // Sağ: Geniş Aksiyon / Seçim Özeti Butonu ("X Ülke, X Şehir Seçildi")
         Expanded(
@@ -1663,7 +1365,7 @@ class _StepTwoDatesPlaceholderBody extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Seçili Tarih Adımı',
                 style: TextStyle(
                   fontSize: 16,
@@ -1740,7 +1442,7 @@ class _StepThreeBudgetPlaceholderBody extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
+                  Text(
                     'Seçili Bütçe Adımı',
                     style: TextStyle(
                       fontSize: 16,
@@ -1757,7 +1459,7 @@ class _StepThreeBudgetPlaceholderBody extends StatelessWidget {
               ),
               Text(
                 viewModel.formattedBudgetSummary,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   color: BeenHereColors.primaryCompass,
                   fontWeight: FontWeight.w700,
@@ -1806,7 +1508,7 @@ class _StepFourTravelersPlaceholderBody extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Seçili Ziyaretçi Adımı',
                 style: TextStyle(
                   fontSize: 16,

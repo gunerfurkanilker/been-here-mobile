@@ -68,27 +68,56 @@ class PlaceSearchViewModel extends ChangeNotifier
     return _repository.getCitiesForCountry(countryCode);
   }
 
+  @override
+  int countItemsForContinent(ContinentFilter continent) =>
+      _repository.countPlacesForContinent(continent);
+
+  @override
+  int countItemsForRegion(RouteRegionCatalogItem region) =>
+      _repository.countPlacesForRegion(region);
+
+  @override
+  String get itemCountUnitLabel => 'Mekan';
+
   PlaceSearchMode get searchMode {
     if (isNearbyMode) return PlaceSearchMode.nearby;
-    if (committedSearchQuery.trim().isNotEmpty) {
+    final hasEnabledKeywordPill = filterPills.any(
+      (p) => p.isEnabled && p.type == RouteFilterPillType.keyword,
+    );
+    if (committedSearchQuery.trim().isNotEmpty || hasEnabledKeywordPill) {
       return PlaceSearchMode.globalSearch;
     }
     return PlaceSearchMode.showcase;
   }
 
-  String get placeSearchQuery => committedSearchQuery;
+  String get placeSearchQuery {
+    if (committedSearchQuery.trim().isNotEmpty) {
+      return committedSearchQuery;
+    }
+    final enabledKeywords = filterPills
+        .where((p) => p.isEnabled && p.type == RouteFilterPillType.keyword)
+        .map((p) => (p.keyword ?? p.label).trim())
+        .where((k) => k.isNotEmpty);
+    return enabledKeywords.join(' ');
+  }
 
   /// "Aradığınız mekanı bulamadınız mı?" kartı hem Yakınımdaki Mekanlar
   /// hem de Konum Bağımsız Genel Arama modlarında listenin sonunda görünür.
   bool get shouldShowNotFoundBannerAtEnd =>
       searchMode == PlaceSearchMode.nearby ||
       searchMode == PlaceSearchMode.globalSearch ||
-      committedSearchQuery.trim().isNotEmpty;
+      placeSearchQuery.trim().isNotEmpty;
 
   List<UserFavoritePlaceList> get favoriteLists =>
       List<UserFavoritePlaceList>.unmodifiable(_favoriteLists);
 
   List<PlaceDiscoveryItem> get displayedPlaces {
+    if (hasFilterPills) {
+      return _repository.getFilteredPlacesByPills(
+        activePills: filterPills,
+        isNearbyPriority: isNearbyMode,
+      );
+    }
     return _repository.getFilteredPlaces(
       selectedFullContinents: selectedFullContinents,
       selectedFullCountries: selectedFullCountryCodes,
@@ -101,6 +130,14 @@ class PlaceSearchViewModel extends ChangeNotifier
   /// Çekmece içindeki "Uygula (X Mekan)" butonunda Anlık Konum açık olsa bile
   /// seçilen ülke/şehir ağacına ait mekan sayısını göstermek için kullanılır.
   int get geographyFilteredPlacesCount {
+    if (hasFilterPills) {
+      return _repository
+          .getFilteredPlacesByPills(
+            activePills: filterPills,
+            isNearbyPriority: false,
+          )
+          .length;
+    }
     return _repository
         .getFilteredPlaces(
           selectedFullContinents: selectedFullContinents,
@@ -155,14 +192,18 @@ class PlaceSearchViewModel extends ChangeNotifier
 
   /// Google Haritalar fallback tetikleyicisi (Min. 3 karakter kuralı)
   PlaceDiscoveryItem? fetchFromGoogleMapsFallback() {
-    final candidate = committedSearchQuery.trim().isNotEmpty
-        ? committedSearchQuery.trim()
+    final candidate = placeSearchQuery.trim().isNotEmpty
+        ? placeSearchQuery.trim()
         : draftSearchInput.trim();
     final effectiveQuery =
         candidate.length >= 3 ? candidate : 'Gizli Kanyon Seyir Terası';
+    final pillContinent = filterPills
+        .where((p) => p.isEnabled && p.continent != null)
+        .map((p) => p.continent!)
+        .firstOrNull;
     final activeContinent = selectedFullContinents.isNotEmpty
         ? selectedFullContinents.first
-        : ContinentFilter.europe;
+        : (pillContinent ?? ContinentFilter.europe);
     final created = _repository.createPlaceFromGoogleFallback(
       query: effectiveQuery,
       activeContinent: activeContinent,

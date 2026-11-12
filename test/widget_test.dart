@@ -7,9 +7,9 @@ void main() {
       (WidgetTester tester) async {
     await tester.pumpWidget(const BeenHereApp());
 
-    // Varsayılan sekme: Rotalar — Ortak hiyerarşik bölge filtresi butonu ve görsel odaklı rota kartı
+    // Varsayılan sekme: Rotalar — Büyük arama çubuğu ve görsel odaklı rota kartı
     // (Rotalarda Yakınımdaki Konumlar butonu yer almaz)
-    expect(find.text('Global (Tüm Dünya)'), findsOneWidget);
+    expect(find.text('Ülke, konum veya şehir ismi ile ara...'), findsOneWidget);
     expect(find.byIcon(Icons.my_location_rounded), findsNothing);
     expect(find.text('Marmaris Turu'), findsOneWidget);
     expect(find.text('Amintas Kaya Mezarları'), findsOneWidget);

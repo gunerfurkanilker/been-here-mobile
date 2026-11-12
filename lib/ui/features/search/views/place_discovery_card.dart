@@ -286,7 +286,7 @@ class _PlaceDiscoveryCardState extends State<PlaceDiscoveryCard>
                                   const SizedBox(width: 3),
                                   Text(
                                     '${place.distanceKmFromUser.toStringAsFixed(1)} km',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w700,
                                       color: BeenHereColors.primaryCompass,

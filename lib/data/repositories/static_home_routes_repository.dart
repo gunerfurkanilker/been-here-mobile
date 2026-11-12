@@ -1039,4 +1039,503 @@ class StaticHomeRoutesRepository {
       return route.countryCodes.any(selectedCountryCodes.contains);
     }).toList();
   }
+
+  // ===========================================================================
+  // YENİ ROTALAR ARAMA PANELİ: KITALAR, ALT BÖLGELER, ÖNERİLER & HAP FİLTRELEME
+  // ===========================================================================
+
+  static const List<RouteContinentCatalogItem> continentsCatalog = [
+    RouteContinentCatalogItem(
+      continent: ContinentFilter.europe,
+      name: 'Avrupa',
+      imageUrl:
+          'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?auto=format&fit=crop&w=700&q=80',
+      regions: [
+        RouteRegionCatalogItem(
+          id: 'western_europe',
+          name: 'Batı Avrupa',
+          continent: ContinentFilter.europe,
+          countryCodes: ['DE', 'FR', 'BE', 'NL'],
+          countryTags: ['Almanya', 'Fransa', 'Belçika', 'Hollanda'],
+          imageUrl:
+              'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=700&q=80',
+        ),
+        RouteRegionCatalogItem(
+          id: 'southern_europe_med',
+          name: 'Güney Avrupa & Akdeniz',
+          continent: ContinentFilter.europe,
+          countryCodes: ['IT', 'TR'],
+          countryTags: ['İtalya', 'Türkiye'],
+          imageUrl:
+              'https://images.unsplash.com/photo-1516483638261-f4dbaf036963?auto=format&fit=crop&w=700&q=80',
+        ),
+        RouteRegionCatalogItem(
+          id: 'turkey_aegean',
+          name: 'Türkiye & Ege',
+          continent: ContinentFilter.europe,
+          countryCodes: ['TR'],
+          countryTags: ['Türkiye'],
+          imageUrl:
+              'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?auto=format&fit=crop&w=700&q=80',
+        ),
+      ],
+    ),
+    RouteContinentCatalogItem(
+      continent: ContinentFilter.asia,
+      name: 'Asya',
+      imageUrl:
+          'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=700&q=80',
+      regions: [
+        RouteRegionCatalogItem(
+          id: 'east_asia',
+          name: 'Doğu Asya',
+          continent: ContinentFilter.asia,
+          countryCodes: ['JP'],
+          countryTags: ['Japonya'],
+          imageUrl:
+              'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=700&q=80',
+        ),
+        RouteRegionCatalogItem(
+          id: 'southeast_asia',
+          name: 'Güneydoğu Asya',
+          continent: ContinentFilter.asia,
+          countryCodes: ['TH'],
+          countryTags: ['Tayland'],
+          imageUrl:
+              'https://images.unsplash.com/photo-1552465011-b4e21bf6e79a?auto=format&fit=crop&w=700&q=80',
+        ),
+        RouteRegionCatalogItem(
+          id: 'north_asia',
+          name: 'Kuzey Asya',
+          continent: ContinentFilter.asia,
+          countryCodes: ['RU'],
+          countryTags: ['Rusya'],
+          imageUrl:
+              'https://images.unsplash.com/photo-1513326738677-b964603b136d?auto=format&fit=crop&w=700&q=80',
+        ),
+      ],
+    ),
+    RouteContinentCatalogItem(
+      continent: ContinentFilter.northAmerica,
+      name: 'Kuzey Amerika',
+      imageUrl:
+          'https://images.unsplash.com/photo-1485738422979-f5c462d49f74?auto=format&fit=crop&w=700&q=80',
+      regions: [
+        RouteRegionCatalogItem(
+          id: 'north_america_east',
+          name: 'Kuzey Amerika Doğu',
+          continent: ContinentFilter.northAmerica,
+          countryCodes: ['US', 'CA'],
+          countryTags: ['ABD', 'Kanada'],
+          imageUrl:
+              'https://images.unsplash.com/photo-1485738422979-f5c462d49f74?auto=format&fit=crop&w=700&q=80',
+        ),
+        RouteRegionCatalogItem(
+          id: 'north_america_west',
+          name: 'Kuzey Amerika Batı',
+          continent: ContinentFilter.northAmerica,
+          countryCodes: ['US', 'CA'],
+          countryTags: ['ABD', 'Kanada'],
+          imageUrl:
+              'https://images.unsplash.com/photo-1503614472-8c93d56e92ce?auto=format&fit=crop&w=700&q=80',
+        ),
+      ],
+    ),
+    RouteContinentCatalogItem(
+      continent: ContinentFilter.southAmerica,
+      name: 'Güney Amerika',
+      imageUrl:
+          'https://images.unsplash.com/photo-1483729558449-99ef09a8c325?auto=format&fit=crop&w=700&q=80',
+      regions: [
+        RouteRegionCatalogItem(
+          id: 'south_america_atlantic',
+          name: 'Güney Amerika Atlantik',
+          continent: ContinentFilter.southAmerica,
+          countryCodes: ['BR'],
+          countryTags: ['Brezilya'],
+          imageUrl:
+              'https://images.unsplash.com/photo-1483729558449-99ef09a8c325?auto=format&fit=crop&w=700&q=80',
+        ),
+        RouteRegionCatalogItem(
+          id: 'andes_patagonia',
+          name: 'Andlar & Patagonya',
+          continent: ContinentFilter.southAmerica,
+          countryCodes: ['AR'],
+          countryTags: ['Arjantin'],
+          imageUrl:
+              'https://images.unsplash.com/photo-1518509562904-e7ef99cdcc86?auto=format&fit=crop&w=700&q=80',
+        ),
+      ],
+    ),
+  ];
+
+  static const Map<String, ({String nameTr, String continentName, List<String> cities})>
+      _popularExtraCatalog = {
+    'ES': (
+      nameTr: 'İspanya',
+      continentName: 'Avrupa',
+      cities: ['Madrid', 'Barselona', 'Sevilla', 'Cadiz'],
+    ),
+  };
+
+  static String _normalizeTr(String input) {
+    return input
+        .trim()
+        .replaceAll('İ', 'i')
+        .replaceAll('I', 'ı')
+        .toLowerCase();
+  }
+
+  static String _continentDisplayName(ContinentFilter continent) {
+    switch (continent) {
+      case ContinentFilter.global:
+        return 'Global';
+      case ContinentFilter.europe:
+        return 'Avrupa';
+      case ContinentFilter.asia:
+        return 'Asya';
+      case ContinentFilter.northAmerica:
+        return 'Kuzey Amerika';
+      case ContinentFilter.southAmerica:
+        return 'Güney Amerika';
+      case ContinentFilter.africa:
+        return 'Afrika';
+      case ContinentFilter.oceania:
+        return 'Okyanusya';
+    }
+  }
+
+  RouteRegionCatalogItem? _findRegionById(String? regionId) {
+    if (regionId == null) return null;
+    for (final continent in continentsCatalog) {
+      for (final region in continent.regions) {
+        if (region.id == regionId) return region;
+      }
+    }
+    return null;
+  }
+
+  int countRoutesForContinent(ContinentFilter continent) {
+    return _routes.where((r) => r.continent == continent).length;
+  }
+
+  int countRoutesForRegion(RouteRegionCatalogItem region) {
+    return _routes
+        .where((r) => r.countryCodes.any(region.countryCodes.contains))
+        .length;
+  }
+
+  bool _routeMatchesKeyword(PublishedRouteFeedItem route, String keyword) {
+    final normalizedQuery = _normalizeTr(keyword);
+    if (normalizedQuery.isEmpty) return true;
+
+    final matchesTitle = _normalizeTr(route.title).contains(normalizedQuery);
+    final matchesDesc =
+        _normalizeTr(route.description).contains(normalizedQuery);
+    final matchesCity =
+        route.cities.any((c) => _normalizeTr(c).contains(normalizedQuery));
+    final matchesCountry = route.countryNames
+        .any((c) => _normalizeTr(c).contains(normalizedQuery));
+    final matchesPlace = route.previewPlaceNames
+            .any((p) => _normalizeTr(p).contains(normalizedQuery)) ||
+        route.stops.any(
+          (s) =>
+              _normalizeTr(s.placeName).contains(normalizedQuery) ||
+              _normalizeTr(s.city).contains(normalizedQuery),
+        );
+
+    return matchesTitle ||
+        matchesDesc ||
+        matchesCity ||
+        matchesCountry ||
+        matchesPlace;
+  }
+
+  bool _routeMatchesLocationPill(
+    PublishedRouteFeedItem route,
+    RouteFeedFilterPill pill,
+  ) {
+    switch (pill.type) {
+      case RouteFilterPillType.continent:
+        return pill.continent != null && route.continent == pill.continent;
+      case RouteFilterPillType.region:
+        final region = _findRegionById(pill.regionId);
+        if (region == null) return false;
+        return route.countryCodes.any(region.countryCodes.contains);
+      case RouteFilterPillType.country:
+        return pill.countryCode != null &&
+            route.countryCodes.contains(pill.countryCode);
+      case RouteFilterPillType.city:
+        final target = _normalizeTr(pill.cityName ?? '');
+        if (target.isEmpty) return false;
+        return route.cities.any((c) => _normalizeTr(c) == target) ||
+            route.stops.any((s) => _normalizeTr(s.city) == target);
+      case RouteFilterPillType.keyword:
+        return true;
+    }
+  }
+
+  /// Aktif (isEnabled == true) filtre haplarına ve bütçe aralığına göre rotaları süzer.
+  /// Konum hapları kendi aralarında OR birleşimi, kelime hapları ve bütçe ile AND kesişimi uygular.
+  List<PublishedRouteFeedItem> getFilteredFeedRoutesByPills({
+    required List<RouteFeedFilterPill> activePills,
+    double? minBudgetTl,
+    double? maxBudgetTl,
+  }) {
+    final enabledPills = activePills.where((p) => p.isEnabled).toList();
+    final locationPills = enabledPills
+        .where((p) => p.type != RouteFilterPillType.keyword)
+        .toList();
+    final keywordPills = enabledPills
+        .where((p) => p.type == RouteFilterPillType.keyword)
+        .toList();
+
+    return _routes.where((route) {
+      if (locationPills.isNotEmpty) {
+        final matchesAnyLocation = locationPills.any(
+          (pill) => _routeMatchesLocationPill(route, pill),
+        );
+        if (!matchesAnyLocation) return false;
+      }
+
+      if (keywordPills.isNotEmpty) {
+        final matchesAllKeywords = keywordPills.every(
+          (pill) => _routeMatchesKeyword(route, pill.keyword ?? pill.label),
+        );
+        if (!matchesAllKeywords) return false;
+      }
+
+      if (minBudgetTl != null && route.estimatedBudgetLocal < minBudgetTl) {
+        return false;
+      }
+      if (maxBudgetTl != null && route.estimatedBudgetLocal > maxBudgetTl) {
+        return false;
+      }
+
+      return true;
+    }).toList();
+  }
+
+  /// Arama panelindeki "Arama Sonuçları" kutusu için dinamik öneriler üretir.
+  List<RouteSearchSuggestion> buildSearchSuggestions(String query) {
+    final trimmed = query.trim();
+    final q = _normalizeTr(trimmed);
+
+    if (q.isEmpty) {
+      return [
+        const RouteSearchSuggestion(
+          id: 'popular:city:marmaris',
+          type: RouteSearchSuggestionType.city,
+          title: 'Marmaris',
+          subtitle: 'Avrupa - Türkiye',
+          pill: RouteFeedFilterPill(
+            id: 'city:marmaris',
+            type: RouteFilterPillType.city,
+            label: 'Marmaris',
+            cityName: 'Marmaris',
+            countryCode: 'TR',
+          ),
+        ),
+        const RouteSearchSuggestion(
+          id: 'popular:city:roma',
+          type: RouteSearchSuggestionType.city,
+          title: 'Roma',
+          subtitle: 'Avrupa - İtalya',
+          pill: RouteFeedFilterPill(
+            id: 'city:roma',
+            type: RouteFilterPillType.city,
+            label: 'Roma',
+            cityName: 'Roma',
+            countryCode: 'IT',
+          ),
+        ),
+        const RouteSearchSuggestion(
+          id: 'popular:city:madrid',
+          type: RouteSearchSuggestionType.city,
+          title: 'Madrid',
+          subtitle: 'Avrupa - İspanya',
+          pill: RouteFeedFilterPill(
+            id: 'city:madrid',
+            type: RouteFilterPillType.city,
+            label: 'Madrid',
+            cityName: 'Madrid',
+            countryCode: 'ES',
+          ),
+        ),
+        const RouteSearchSuggestion(
+          id: 'popular:region:western_europe',
+          type: RouteSearchSuggestionType.region,
+          title: 'Batı Avrupa',
+          subtitle: 'Avrupa - Bölge',
+          pill: RouteFeedFilterPill(
+            id: 'region:western_europe',
+            type: RouteFilterPillType.region,
+            label: 'Batı Avrupa',
+            regionId: 'western_europe',
+            continent: ContinentFilter.europe,
+          ),
+        ),
+        const RouteSearchSuggestion(
+          id: 'popular:continent:EUROPE',
+          type: RouteSearchSuggestionType.continent,
+          title: 'Avrupa',
+          subtitle: 'Kıta',
+          pill: RouteFeedFilterPill(
+            id: 'continent:EUROPE',
+            type: RouteFilterPillType.continent,
+            label: 'Avrupa',
+            continent: ContinentFilter.europe,
+          ),
+        ),
+      ];
+    }
+
+    final suggestions = <RouteSearchSuggestion>[
+      RouteSearchSuggestion(
+        id: 'keyword:$q',
+        type: RouteSearchSuggestionType.keyword,
+        title: '$trimmed ile arama yap',
+        subtitle: '(kelime ile arama)',
+        pill: RouteFeedFilterPill(
+          id: 'keyword:$q',
+          type: RouteFilterPillType.keyword,
+          label: '"$trimmed"',
+          keyword: trimmed,
+        ),
+      ),
+    ];
+
+    final seenCityIds = <String>{};
+
+    // 1. Repository şehirleri (ülkelere göre)
+    for (final country in _allCountries) {
+      final continentName = _continentDisplayName(country.continent);
+      final cities = citiesByCountryCode[country.code] ?? const <String>[];
+      for (final city in cities) {
+        final normCity = _normalizeTr(city);
+        if (normCity.contains(q) && seenCityIds.add(normCity)) {
+          suggestions.add(
+            RouteSearchSuggestion(
+              id: 'city:$normCity',
+              type: RouteSearchSuggestionType.city,
+              title: city,
+              subtitle: '$continentName - ${country.nameTr}',
+              pill: RouteFeedFilterPill(
+                id: 'city:$normCity',
+                type: RouteFilterPillType.city,
+                label: city,
+                cityName: city,
+                countryCode: country.code,
+              ),
+            ),
+          );
+        }
+      }
+    }
+
+    // 2. Popüler katalog şehirleri (örn: Madrid / İspanya)
+    for (final entry in _popularExtraCatalog.entries) {
+      for (final city in entry.value.cities) {
+        final normCity = _normalizeTr(city);
+        if (normCity.contains(q) && seenCityIds.add(normCity)) {
+          suggestions.add(
+            RouteSearchSuggestion(
+              id: 'city:$normCity',
+              type: RouteSearchSuggestionType.city,
+              title: city,
+              subtitle: '${entry.value.continentName} - ${entry.value.nameTr}',
+              pill: RouteFeedFilterPill(
+                id: 'city:$normCity',
+                type: RouteFilterPillType.city,
+                label: city,
+                cityName: city,
+                countryCode: entry.key,
+              ),
+            ),
+          );
+        }
+      }
+    }
+
+    // 3. Eşleşen ülkeler
+    for (final country in _allCountries) {
+      if (_normalizeTr(country.nameTr).contains(q) ||
+          _normalizeTr(country.code) == q) {
+        suggestions.add(
+          RouteSearchSuggestion(
+            id: 'country:${country.code}',
+            type: RouteSearchSuggestionType.country,
+            title: country.nameTr,
+            subtitle: '${_continentDisplayName(country.continent)} - Ülke',
+            pill: RouteFeedFilterPill(
+              id: 'country:${country.code}',
+              type: RouteFilterPillType.country,
+              label: country.nameTr,
+              countryCode: country.code,
+            ),
+          ),
+        );
+      }
+    }
+    for (final entry in _popularExtraCatalog.entries) {
+      if (_normalizeTr(entry.value.nameTr).contains(q) ||
+          _normalizeTr(entry.key) == q) {
+        suggestions.add(
+          RouteSearchSuggestion(
+            id: 'country:${entry.key}',
+            type: RouteSearchSuggestionType.country,
+            title: entry.value.nameTr,
+            subtitle: '${entry.value.continentName} - Ülke',
+            pill: RouteFeedFilterPill(
+              id: 'country:${entry.key}',
+              type: RouteFilterPillType.country,
+              label: entry.value.nameTr,
+              countryCode: entry.key,
+            ),
+          ),
+        );
+      }
+    }
+
+    // 4. Eşleşen alt bölgeler ve kıtalar
+    for (final continent in continentsCatalog) {
+      for (final region in continent.regions) {
+        if (_normalizeTr(region.name).contains(q)) {
+          suggestions.add(
+            RouteSearchSuggestion(
+              id: 'region:${region.id}',
+              type: RouteSearchSuggestionType.region,
+              title: region.name,
+              subtitle: '${continent.name} - Bölge',
+              pill: RouteFeedFilterPill(
+                id: 'region:${region.id}',
+                type: RouteFilterPillType.region,
+                label: region.name,
+                regionId: region.id,
+                continent: continent.continent,
+              ),
+            ),
+          );
+        }
+      }
+      if (_normalizeTr(continent.name).contains(q)) {
+        suggestions.add(
+          RouteSearchSuggestion(
+            id: 'continent:${continent.continent.code}',
+            type: RouteSearchSuggestionType.continent,
+            title: continent.name,
+            subtitle: 'Kıta',
+            pill: RouteFeedFilterPill(
+              id: 'continent:${continent.continent.code}',
+              type: RouteFilterPillType.continent,
+              label: continent.name,
+              continent: continent.continent,
+            ),
+          ),
+        );
+      }
+    }
+
+    return suggestions;
+  }
 }

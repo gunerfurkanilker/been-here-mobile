@@ -77,6 +77,8 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
               filterModel: vm,
               resultCountLabelBuilder: () =>
                   '${vm.geographyFilteredPlacesCount} Mekan',
+              showNearbyButton: true,
+              showTreeDrawerButton: true,
             ),
 
             const SizedBox(height: 10),
@@ -85,7 +87,37 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
             // 3. MEKAN KARTLARI LİSTESİ + LİSTE SONU "ARADIĞINIZ MEKANI BULAMADINIZ MI?" AKIŞI
             // =================================================================
             Expanded(
-              child: ListView.builder(
+              child: places.isEmpty && !showEndFallbackCard
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.explore_off_outlined,
+                              size: 46,
+                              color: BeenHereColors.textSecondary,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Seçilen bölge/şehir filtresinde henüz keşif noktası bulunmuyor.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: BeenHereColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: vm.resetToGlobal,
+                              icon: const Icon(Icons.public_rounded, size: 17),
+                              label: const Text('Tüm Dünya Mekanlarını Göster'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
                 key: const PageStorageKey<String>('place-search-list'),
                 physics: const BouncingScrollPhysics(
                   parent: AlwaysScrollableScrollPhysics(),
@@ -153,7 +185,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
 
             return Container(
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 color: BeenHereColors.surface,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                 border: Border(
@@ -203,13 +235,13 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                               place.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w800,
                                 color: BeenHereColors.textPrimary,
                               ),
                             ),
-                            const Text(
+                            Text(
                               'Taslak veya Anı Rotana Ekle',
                               style: TextStyle(
                                 fontSize: 12,
@@ -276,7 +308,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                                       children: [
                                         Text(
                                           routeOpt.title,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 13.5,
                                             fontWeight: FontWeight.w700,
                                             color: BeenHereColors.textPrimary,
@@ -285,7 +317,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                                         const SizedBox(height: 2),
                                         Text(
                                           '${routeOpt.routeTypeLabel} • ${routeOpt.placeIds.length} durak',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 11.5,
                                             color: BeenHereColors.textSecondary,
                                           ),
@@ -343,7 +375,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
 
             return Container(
               padding: EdgeInsets.fromLTRB(20, 14, 20, 28 + bottomInset),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 color: BeenHereColors.surface,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                 border: Border(
@@ -378,7 +410,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                               .withValues(alpha: 0.16),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.flag_rounded,
                           color: BeenHereColors.goldLeague,
                           size: 20,
@@ -393,13 +425,13 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                               place.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w800,
                                 color: BeenHereColors.textPrimary,
                               ),
                             ),
-                            const Text(
+                            Text(
                               'Özel Mekan Listenize Kaydedin (Flag)',
                               style: TextStyle(
                                 fontSize: 12,
@@ -459,7 +491,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                                       children: [
                                         Text(
                                           list.title,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 14,
                                             fontWeight: FontWeight.w700,
                                             color: BeenHereColors.textPrimary,
@@ -467,7 +499,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                                         ),
                                         Text(
                                           '${list.placeIds.length} mekan kayıtlı',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 11.5,
                                             color: BeenHereColors.textSecondary,
                                           ),
@@ -494,7 +526,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                   ],
 
                   const SizedBox(height: 8),
-                  const Divider(color: BeenHereColors.borderSubtle),
+                  Divider(color: BeenHereColors.borderSubtle),
                   const SizedBox(height: 8),
 
                   // + Yeni Özel Liste Oluştur
@@ -505,7 +537,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                           controller: newListController,
                           decoration: InputDecoration(
                             hintText: '+ Yeni liste adı (Örn: Sonbahar Planı)',
-                            hintStyle: const TextStyle(
+                            hintStyle: TextStyle(
                               fontSize: 12.5,
                               color: BeenHereColors.textSecondary,
                             ),
@@ -518,7 +550,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                             ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
+                              borderSide: BorderSide(
                                 color: BeenHereColors.borderSubtle,
                               ),
                             ),
@@ -563,7 +595,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
       builder: (ctx) {
         return Container(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: BeenHereColors.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             border: Border(
@@ -594,7 +626,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                           .withValues(alpha: 0.16),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.route_rounded,
                       color: BeenHereColors.primaryCompass,
                       size: 20,
@@ -609,7 +641,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                           place.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
                             color: BeenHereColors.textPrimary,
@@ -617,7 +649,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                         ),
                         Text(
                           'Bu mekanın yer aldığı ${relatedRoutes.length} yayınlanmış gezgin rotası',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             color: BeenHereColors.textSecondary,
                           ),
@@ -629,7 +661,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
               ),
               const SizedBox(height: 16),
               if (relatedRoutes.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
                   child: Text(
                     'Bu mekan henüz yayınlanmış bir rotaya eklenmemiş.',
@@ -676,7 +708,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                                         fit: BoxFit.cover,
                                         errorBuilder: (_, _, _) => Container(
                                           color: BeenHereColors.surface,
-                                          child: const Icon(
+                                          child: Icon(
                                             Icons.map_rounded,
                                             color:
                                                 BeenHereColors.primaryCompass,
@@ -685,7 +717,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                                       )
                                     : Container(
                                         color: BeenHereColors.surface,
-                                        child: const Icon(
+                                        child: Icon(
                                           Icons.map_rounded,
                                           color: BeenHereColors.primaryCompass,
                                         ),
@@ -702,7 +734,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                                     route.title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 14.5,
                                       fontWeight: FontWeight.w800,
                                       color: BeenHereColors.textPrimary,
@@ -711,7 +743,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                                   const SizedBox(height: 3),
                                   Text(
                                     '${route.authorDisplayName} (@${route.authorUsername})',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
                                       color: BeenHereColors.textSecondary,
                                     ),
@@ -721,7 +753,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                                     children: [
                                       Text(
                                         '${route.durationDays} Gün',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 11.5,
                                           fontWeight: FontWeight.w700,
                                           color: BeenHereColors.goldLeague,
@@ -730,7 +762,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                                       const SizedBox(width: 8),
                                       Text(
                                         '• \$${route.estimatedBudgetUsd.round()}',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 11.5,
                                           fontWeight: FontWeight.w700,
                                           color: BeenHereColors.verifiedEmerald,
@@ -739,7 +771,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                                       const SizedBox(width: 8),
                                       Text(
                                         '• ${route.stops.length} Durak',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 11.5,
                                           color: BeenHereColors.textSecondary,
                                         ),
@@ -749,7 +781,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                                 ],
                               ),
                             ),
-                            const Icon(
+                            Icon(
                               Icons.arrow_forward_ios_rounded,
                               size: 15,
                               color: BeenHereColors.primaryCompass,
@@ -807,7 +839,7 @@ class _NotFoundGoogleFallbackCard extends StatelessWidget {
                   color: BeenHereColors.primaryCompass.withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.add_location_alt_rounded,
                   color: BeenHereColors.primaryCompass,
                   size: 22,
@@ -818,7 +850,7 @@ class _NotFoundGoogleFallbackCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Aradığınız mekanı bulamadınız mı?',
                       style: TextStyle(
                         fontSize: 15.5,
@@ -833,7 +865,7 @@ class _NotFoundGoogleFallbackCard extends StatelessWidget {
                           : cleanQuery.isEmpty
                               ? 'Aradığınız mekan yerel listede yoksa en az 3 harf yazarak Google Haritalar\'da arayabilirsiniz.'
                               : '"$cleanQuery" için Google Haritalar (Places API) veritabanını sorgulayabilirsiniz.',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12.5,
                         color: BeenHereColors.textSecondary,
                         height: 1.35,

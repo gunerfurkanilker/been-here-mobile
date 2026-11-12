@@ -1,11 +1,13 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../theme/been_here_theme.dart';
 import '../view_models/navigation_shell_view_model.dart';
 import 'glowing_live_tracker_button.dart';
 
-class BeenHereShellScaffold extends StatelessWidget {
+class BeenHereShellScaffold extends StatefulWidget {
   const BeenHereShellScaffold({
     super.key,
     required this.viewModel,
@@ -15,8 +17,127 @@ class BeenHereShellScaffold extends StatelessWidget {
   final NavigationShellViewModel viewModel;
   final Map<BeenHereNavTab, Widget> tabBodies;
 
+  @override
+  State<BeenHereShellScaffold> createState() => _BeenHereShellScaffoldState();
+}
+
+class _BeenHereShellScaffoldState extends State<BeenHereShellScaffold>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _barsAnimationController;
+  late final Animation<double> _barsAnimation;
+
+  bool _isAppBarVisible = true;
+  double _verticalScrollDelta = 0.0;
+  BeenHereNavTab? _previousTab;
+
+  @override
+  void initState() {
+    super.initState();
+    _previousTab = widget.viewModel.currentTab;
+    widget.viewModel.addListener(_onTabChanged);
+
+    _barsAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+      reverseDuration: const Duration(milliseconds: 320),
+      value: 1.0,
+    );
+    _barsAnimation = CurvedAnimation(
+      parent: _barsAnimationController,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    _barsAnimationController.addListener(_onAnimationTick);
+  }
+
+  void _onAnimationTick() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant BeenHereShellScaffold oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.viewModel != widget.viewModel) {
+      oldWidget.viewModel.removeListener(_onTabChanged);
+      widget.viewModel.addListener(_onTabChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.viewModel.removeListener(_onTabChanged);
+    _barsAnimationController.removeListener(_onAnimationTick);
+    _barsAnimationController.dispose();
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (_previousTab != widget.viewModel.currentTab) {
+      _previousTab = widget.viewModel.currentTab;
+      _verticalScrollDelta = 0.0;
+      _setBarsVisible(true);
+    }
+  }
+
+  void _setBarsVisible(bool visible) {
+    if (_isAppBarVisible == visible) return;
+    _isAppBarVisible = visible;
+    if (visible) {
+      _barsAnimationController.forward();
+    } else {
+      _barsAnimationController.reverse();
+    }
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return false;
+
+    if (notification.metrics.pixels <= 2.0) {
+      _verticalScrollDelta = 0.0;
+      _setBarsVisible(true);
+      return false;
+    }
+
+    if (notification is UserScrollNotification) {
+      if (notification.direction == ScrollDirection.reverse) {
+        if (notification.metrics.pixels > 16.0) {
+          _verticalScrollDelta = 0.0;
+          _setBarsVisible(false);
+        }
+      } else if (notification.direction == ScrollDirection.forward) {
+        _verticalScrollDelta = 0.0;
+        _setBarsVisible(true);
+      }
+    } else if (notification is ScrollUpdateNotification) {
+      if (!notification.metrics.outOfRange &&
+          notification.metrics.maxScrollExtent > 0) {
+        final delta = notification.scrollDelta ?? 0.0;
+        if (delta > 0) {
+          _verticalScrollDelta =
+              _verticalScrollDelta > 0 ? _verticalScrollDelta + delta : delta;
+          if (_verticalScrollDelta >= 16.0 &&
+              notification.metrics.pixels > 16.0) {
+            _setBarsVisible(false);
+            _verticalScrollDelta = 0.0;
+          }
+        } else if (delta < 0) {
+          _verticalScrollDelta =
+              _verticalScrollDelta < 0 ? _verticalScrollDelta + delta : delta;
+          if (_verticalScrollDelta <= -12.0) {
+            _setBarsVisible(true);
+            _verticalScrollDelta = 0.0;
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
   void _handleLiveTrackerTap(BuildContext context) {
-    if (!viewModel.isPremiumUser) {
+    if (!widget.viewModel.isPremiumUser) {
       showModalBottomSheet<void>(
         context: context,
         backgroundColor: BeenHereColors.surface,
@@ -30,14 +151,14 @@ class BeenHereShellScaffold extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                children: const [
+                children: [
                   Icon(
                     Icons.workspace_premium_rounded,
                     color: BeenHereColors.goldLeague,
                     size: 28,
                   ),
-                  SizedBox(width: 10),
-                  Expanded(
+                  const SizedBox(width: 10),
+                  const Expanded(
                     child: Text(
                       'Canlı Geofence Kumbarası & Otomatik EXIF (Premium)',
                       style: TextStyle(
@@ -49,7 +170,7 @@ class BeenHereShellScaffold extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'Seyahat esnasında gezdiğin mekanları 100-150m yakınından geçerken pil harcamadan otomatik yakalar (GEO_VERIFIED: +50 Puan) ve gün sonunda çektiğin fotoğrafları EXIF koordinatlarıyla rotana eşleştirir.',
                 style: TextStyle(
                   color: BeenHereColors.textSecondary,
@@ -61,8 +182,8 @@ class BeenHereShellScaffold extends StatelessWidget {
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: () {
-                    viewModel.toggleSubscriptionTierForPreview();
-                    viewModel.toggleLiveGeofenceTracker();
+                    widget.viewModel.toggleSubscriptionTierForPreview();
+                    widget.viewModel.toggleLiveGeofenceTracker();
                     Navigator.of(ctx).pop();
                   },
                   icon: const Icon(Icons.bolt_rounded),
@@ -76,17 +197,17 @@ class BeenHereShellScaffold extends StatelessWidget {
       return;
     }
 
-    viewModel.toggleLiveGeofenceTracker();
+    widget.viewModel.toggleLiveGeofenceTracker();
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
         backgroundColor: BeenHereColors.surfaceElevated,
         content: Text(
-          viewModel.isLiveGeofenceActive
+          widget.viewModel.isLiveGeofenceActive
               ? '📡 Canlı Seyahat Yakalayıcı (Geofence & EXIF) aktif! Gezdiğin duraklar otomatik yakalanıyor.'
               : 'Canlı Seyahat Yakalayıcı duraklatıldı.',
-          style: const TextStyle(color: BeenHereColors.textPrimary),
+          style: TextStyle(color: BeenHereColors.textPrimary),
         ),
       ),
     );
@@ -128,83 +249,156 @@ class BeenHereShellScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: viewModel,
+      listenable: widget.viewModel,
       builder: (context, _) {
-        final activeTab = viewModel.currentTab;
+        final activeTab = widget.viewModel.currentTab;
         final rawTopPadding = MediaQuery.paddingOf(context).top;
-        // Safari Web / mobil tarayıcılarda üst çubuğun yapışmasını önleyen akıllı nefes payı
-        final extraWebTopPadding = rawTopPadding > 0 ? 0.0 : 8.0;
+        final totalToolbarHeight = kToolbarHeight + rawTopPadding;
+        final effectiveToolbarHeight =
+            totalToolbarHeight * _barsAnimation.value;
+        // Topbar gizlenirken veya gizlendiğinde çentikli cihazlarda body'nin
+        // durum çubuğu alanına taşmaması için kalan üst güvenli alan korunur.
+        final remainingTopSafePadding =
+            (rawTopPadding - effectiveToolbarHeight).clamp(0.0, rawTopPadding);
 
         return Scaffold(
           extendBody: true,
-          appBar: PreferredSize(
-            preferredSize: Size.fromHeight(kToolbarHeight + extraWebTopPadding),
-            child: Padding(
-              padding: EdgeInsets.only(top: extraWebTopPadding),
-              child: AppBar(
-                titleSpacing: 16,
-                elevation: 0,
-                scrolledUnderElevation: 0,
-                backgroundColor: BeenHereColors.background,
-                title: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(7),
-                      decoration: BoxDecoration(
-                        color: BeenHereColors.primaryCompass
-                            .withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: PhosphorIcon(
-                        _iconForTab(activeTab, PhosphorIconsStyle.duotone),
-                        color: BeenHereColors.primaryCompass,
-                        size: 20,
-                      ),
+          appBar: _AutoHideAppBar(
+            heightFactor: _barsAnimation.value,
+            totalToolbarHeight: totalToolbarHeight,
+            isInteractive: _isAppBarVisible,
+            child: AppBar(
+              titleSpacing: 16,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              backgroundColor: BeenHereColors.background,
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: BeenHereThemeController.instance.isDark
+                          ? BeenHereColors.primaryCompass
+                              .withValues(alpha: 0.16)
+                          : BeenHereLightColors.softSky
+                              .withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    const SizedBox(width: 10),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 180),
-                      child: Text(
-                        _titleForTab(activeTab),
-                        key: ValueKey<BeenHereNavTab>(activeTab),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 20,
-                          letterSpacing: -0.4,
-                        ),
-                      ),
+                    child: PhosphorIcon(
+                      _iconForTab(activeTab, PhosphorIconsStyle.duotone),
+                      color: BeenHereThemeController.instance.isDark
+                          ? BeenHereColors.primaryCompass
+                          : BeenHereColors.secondaryAmber,
+                      size: 20,
                     ),
-                  ],
-                ),
-                actions: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 14),
-                    child: GlowingLiveTrackerButton(
-                      isActive: viewModel.isLiveGeofenceActive,
-                      isPremiumUser: viewModel.isPremiumUser,
-                      onPressed: () => _handleLiveTrackerTap(context),
+                  ),
+                  const SizedBox(width: 10),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    child: Text(
+                      _titleForTab(activeTab),
+                      key: ValueKey<BeenHereNavTab>(activeTab),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 20,
+                        letterSpacing: -0.4,
+                      ),
                     ),
                   ),
                 ],
               ),
+              actions: [
+                const _ThemeToggleGlassButton(),
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(right: 14),
+                  child: GlowingLiveTrackerButton(
+                    isActive: widget.viewModel.isLiveGeofenceActive,
+                    isPremiumUser: widget.viewModel.isPremiumUser,
+                    onPressed: () => _handleLiveTrackerTap(context),
+                  ),
+                ),
+              ],
             ),
           ),
-          body: SafeArea(
-            bottom: false,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              child: KeyedSubtree(
-                key: ValueKey<BeenHereNavTab>(activeTab),
-                child: tabBodies[activeTab] ?? const SizedBox.shrink(),
+          body: NotificationListener<ScrollNotification>(
+            onNotification: _handleScrollNotification,
+            child: Padding(
+              padding: EdgeInsets.only(top: remainingTopSafePadding),
+              child: ClipRect(
+                child: SafeArea(
+                  top: false,
+                  bottom: false,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    child: KeyedSubtree(
+                      key: ValueKey<BeenHereNavTab>(activeTab),
+                      child:
+                          widget.tabBodies[activeTab] ?? const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
           bottomNavigationBar: _LiquidGlassBottomNavBar(
             activeTab: activeTab,
-            onSelectTab: viewModel.selectTab,
+            onSelectTab: widget.viewModel.selectTab,
           ),
         );
       },
+    );
+  }
+}
+
+class _AutoHideAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const _AutoHideAppBar({
+    required this.heightFactor,
+    required this.totalToolbarHeight,
+    required this.isInteractive,
+    required this.child,
+  });
+
+  final double heightFactor;
+  final double totalToolbarHeight;
+  final bool isInteractive;
+  final Widget child;
+
+  @override
+  Size get preferredSize =>
+      Size.fromHeight(totalToolbarHeight * heightFactor.clamp(0.0, 1.0));
+
+  @override
+  Widget build(BuildContext context) {
+    final clampedFactor = heightFactor.clamp(0.0, 1.0);
+    final effectiveHeight = totalToolbarHeight * clampedFactor;
+    final smoothOpacity = Curves.easeOutCubic.transform(clampedFactor);
+
+    return SizedBox(
+      height: effectiveHeight,
+      child: ColoredBox(
+        color: BeenHereColors.background,
+        child: ClipRect(
+          child: OverflowBox(
+            alignment: Alignment.topCenter,
+            minHeight: 0,
+            maxHeight: totalToolbarHeight,
+            child: Transform.translate(
+              offset: Offset(
+                0,
+                -(1.0 - clampedFactor) * totalToolbarHeight * 0.75,
+              ),
+              child: Opacity(
+                opacity: smoothOpacity,
+                child: IgnorePointer(
+                  ignoring: !isInteractive,
+                  child: child,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -221,6 +415,7 @@ class _LiquidGlassBottomNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottomSafePadding = MediaQuery.paddingOf(context).bottom;
+    final isDark = BeenHereThemeController.instance.isDark;
 
     return Padding(
       // Alttan nefes payı ve yatayda tam ortalanmış (sol ve sağ boşluklar birebir eşit) kompakt kapsül
@@ -243,18 +438,27 @@ class _LiquidGlassBottomNavBar extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white.withValues(alpha: 0.10),
-                    BeenHereColors.surface.withValues(alpha: 0.22),
-                  ],
+                  colors: isDark
+                      ? [
+                          Colors.white.withValues(alpha: 0.10),
+                          BeenHereColors.surface.withValues(alpha: 0.22),
+                        ]
+                      : [
+                          BeenHereColors.surface.withValues(alpha: 0.82),
+                          BeenHereLightColors.softSky.withValues(alpha: 0.42),
+                        ],
                 ),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.16),
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.16)
+                      : BeenHereColors.borderSubtle.withValues(alpha: 0.90),
                   width: 0.9,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.18),
+                    color: isDark
+                        ? Colors.black.withValues(alpha: 0.18)
+                        : BeenHereColors.textPrimary.withValues(alpha: 0.12),
                     blurRadius: 18,
                     offset: const Offset(0, 6),
                   ),
@@ -350,9 +554,12 @@ class _GlassNavIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = BeenHereThemeController.instance.isDark;
     final double iconSize = isCenterProminent ? 26.5 : 21.5;
     final Color iconColor = isSelected
-        ? BeenHereColors.primaryCompass
+        ? (isDark
+            ? BeenHereColors.primaryCompass
+            : BeenHereColors.secondaryAmber)
         : (isCenterProminent
             ? BeenHereColors.textPrimary
             : BeenHereColors.textSecondary.withValues(alpha: 0.92));
@@ -370,9 +577,12 @@ class _GlassNavIconButton extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: isSelected
-                ? BeenHereColors.primaryCompass.withValues(alpha: 0.18)
+                ? BeenHereColors.primaryCompass
+                    .withValues(alpha: isDark ? 0.18 : 0.28)
                 : (isCenterProminent
-                    ? Colors.white.withValues(alpha: 0.08)
+                    ? (isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : BeenHereColors.borderSubtle.withValues(alpha: 0.35))
                     : Colors.transparent),
           ),
           child: Center(
@@ -384,6 +594,82 @@ class _GlassNavIconButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ThemeToggleGlassButton extends StatelessWidget {
+  const _ThemeToggleGlassButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: BeenHereThemeController.instance,
+      builder: (context, _) {
+        final isDark = BeenHereThemeController.instance.isDark;
+
+        return Tooltip(
+          message: isDark ? 'Aydınlık Temaya Geç' : 'Karanlık Temaya Geç',
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                HapticFeedback.selectionClick();
+                BeenHereThemeController.instance.toggleTheme();
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 240),
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: isDark
+                      ? BeenHereColors.surface.withValues(alpha: 0.8)
+                      : BeenHereColors.surfaceElevated,
+                  border: Border.all(
+                    color: isDark
+                        ? BeenHereColors.goldLeague.withValues(alpha: 0.35)
+                        : BeenHereColors.borderSubtle,
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    if (isDark)
+                      BoxShadow(
+                        color: BeenHereColors.goldLeague.withValues(alpha: 0.18),
+                        blurRadius: 10,
+                        spreadRadius: 0.5,
+                      ),
+                  ],
+                ),
+                child: Center(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    transitionBuilder: (child, anim) => RotationTransition(
+                      turns: anim,
+                      child: FadeTransition(opacity: anim, child: child),
+                    ),
+                    child: isDark
+                        ? PhosphorIcon(
+                            PhosphorIcons.sun(PhosphorIconsStyle.bold),
+                            key: const ValueKey('sun_icon'),
+                            color: BeenHereColors.goldLeague,
+                            size: 20,
+                          )
+                        : PhosphorIcon(
+                            PhosphorIcons.moonStars(PhosphorIconsStyle.bold),
+                            key: const ValueKey('moon_icon'),
+                            color: BeenHereColors.textPrimary,
+                            size: 20,
+                          ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

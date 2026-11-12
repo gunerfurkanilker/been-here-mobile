@@ -283,6 +283,122 @@ class StaticPlaceDiscoveryRepository {
     return results;
   }
 
+  static String _normalizeTr(String input) {
+    return input
+        .trim()
+        .replaceAll('İ', 'i')
+        .replaceAll('I', 'ı')
+        .toLowerCase();
+  }
+
+  RouteRegionCatalogItem? _findRegionById(String? regionId) {
+    if (regionId == null) return null;
+    for (final continent in StaticHomeRoutesRepository.continentsCatalog) {
+      for (final region in continent.regions) {
+        if (region.id == regionId) return region;
+      }
+    }
+    return null;
+  }
+
+  int countPlacesForContinent(ContinentFilter continent) {
+    return _places.where((p) => p.continent == continent).length;
+  }
+
+  int countPlacesForRegion(RouteRegionCatalogItem region) {
+    return _places
+        .where((p) => region.countryCodes.contains(p.countryCode))
+        .length;
+  }
+
+  bool _placeMatchesLocationPill(
+    PlaceDiscoveryItem place,
+    RouteFeedFilterPill pill,
+  ) {
+    switch (pill.type) {
+      case RouteFilterPillType.continent:
+        return pill.continent != null && place.continent == pill.continent;
+      case RouteFilterPillType.region:
+        final region = _findRegionById(pill.regionId);
+        if (region == null) return false;
+        return region.countryCodes.contains(place.countryCode);
+      case RouteFilterPillType.country:
+        return pill.countryCode != null &&
+            place.countryCode == pill.countryCode;
+      case RouteFilterPillType.city:
+        final target = _normalizeTr(pill.cityName ?? '');
+        if (target.isEmpty) return false;
+        return _normalizeTr(place.city) == target;
+      case RouteFilterPillType.keyword:
+        return true;
+    }
+  }
+
+  bool _placeMatchesKeyword(PlaceDiscoveryItem place, String keyword) {
+    final normalizedQuery = _normalizeTr(keyword);
+    if (normalizedQuery.isEmpty) return true;
+
+    final matchesName = _normalizeTr(place.name).contains(normalizedQuery);
+    final matchesSummary =
+        _normalizeTr(place.shortSummary).contains(normalizedQuery);
+    final matchesCity = _normalizeTr(place.city).contains(normalizedQuery);
+    final matchesCountry =
+        _normalizeTr(place.countryName).contains(normalizedQuery);
+    final matchesCategory =
+        _normalizeTr(place.categoryLabel).contains(normalizedQuery);
+    final matchesVibe = place.communityVibes.any(
+      (v) => _normalizeTr(v).contains(normalizedQuery),
+    );
+
+    return matchesName ||
+        matchesSummary ||
+        matchesCity ||
+        matchesCountry ||
+        matchesCategory ||
+        matchesVibe;
+  }
+
+  /// Aktif (isEnabled == true) filtre haplarına göre mekanları süzer.
+  /// Konum hapları kendi aralarında OR birleşimi, kelime hapları ile AND kesişimi uygular.
+  List<PlaceDiscoveryItem> getFilteredPlacesByPills({
+    required List<RouteFeedFilterPill> activePills,
+    required bool isNearbyPriority,
+  }) {
+    final enabledPills = activePills.where((p) => p.isEnabled).toList();
+    final locationPills = enabledPills
+        .where((p) => p.type != RouteFilterPillType.keyword)
+        .toList();
+    final keywordPills = enabledPills
+        .where((p) => p.type == RouteFilterPillType.keyword)
+        .toList();
+
+    final results = _places.where((place) {
+      if (!isNearbyPriority && locationPills.isNotEmpty) {
+        final matchesAnyLocation = locationPills.any(
+          (pill) => _placeMatchesLocationPill(place, pill),
+        );
+        if (!matchesAnyLocation) return false;
+      }
+
+      if (keywordPills.isNotEmpty) {
+        final matchesAllKeywords = keywordPills.every(
+          (pill) => _placeMatchesKeyword(place, pill.keyword ?? pill.label),
+        );
+        if (!matchesAllKeywords) return false;
+      }
+
+      return true;
+    }).toList();
+
+    if (isNearbyPriority) {
+      results.sort(
+        (a, b) => a.distanceKmFromUser.compareTo(b.distanceKmFromUser),
+      );
+    }
+
+    return results;
+  }
+
   /// Mekanın geçtiği yayınlanmış (`PUBLISHED`) rotaları getirir
   List<PublishedRouteFeedItem> getRelatedRoutesForPlace(
     PlaceDiscoveryItem place,

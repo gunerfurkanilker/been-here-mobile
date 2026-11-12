@@ -43,7 +43,7 @@ class _PublishedRouteCardState extends State<PublishedRouteCard> {
                     radius: 18,
                     backgroundColor:
                         BeenHereColors.primaryCompass.withValues(alpha: 0.18),
-                    child: const Icon(
+                    child: Icon(
                       Icons.hiking_rounded,
                       size: 20,
                       color: BeenHereColors.primaryCompass,
@@ -64,7 +64,7 @@ class _PublishedRouteCardState extends State<PublishedRouteCard> {
                                 route.authorDisplayName,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 13.5,
                                   fontWeight: FontWeight.w700,
                                   color: BeenHereColors.textPrimary,
@@ -74,7 +74,7 @@ class _PublishedRouteCardState extends State<PublishedRouteCard> {
                             const SizedBox(width: 6),
                             Text(
                               '@${route.authorUsername}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 color: BeenHereColors.textSecondary,
                               ),
@@ -97,7 +97,7 @@ class _PublishedRouteCardState extends State<PublishedRouteCard> {
                               ),
                               child: Text(
                                 route.authorRankLabel,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
                                   color: BeenHereColors.goldLeague,
@@ -111,7 +111,7 @@ class _PublishedRouteCardState extends State<PublishedRouteCard> {
                                   '• ${route.cities.join(' • ')}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 11,
                                     color: BeenHereColors.textSecondary,
                                   ),
@@ -140,7 +140,7 @@ class _PublishedRouteCardState extends State<PublishedRouteCard> {
                       ),
                       child: Text(
                         route.countryNames.first,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: BeenHereColors.textSecondary,
@@ -185,7 +185,7 @@ class _PublishedRouteCardState extends State<PublishedRouteCard> {
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.landscape_rounded,
                                     size: 48,
                                     color: BeenHereColors.secondaryAmber,
@@ -193,7 +193,7 @@ class _PublishedRouteCardState extends State<PublishedRouteCard> {
                                   const SizedBox(height: 6),
                                   Text(
                                     '${route.cities.join(' • ')} (${index + 1}/${sliderImages.length})',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: BeenHereColors.textSecondary,
                                       fontSize: 12,
                                     ),
@@ -273,7 +273,7 @@ class _PublishedRouteCardState extends State<PublishedRouteCard> {
                     route.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
                       color: BeenHereColors.textPrimary,
@@ -306,7 +306,7 @@ class _PublishedRouteCardState extends State<PublishedRouteCard> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.place_rounded,
                                 size: 13,
                                 color: BeenHereColors.primaryCompass,
@@ -314,7 +314,7 @@ class _PublishedRouteCardState extends State<PublishedRouteCard> {
                               const SizedBox(width: 5),
                               Text(
                                 placeTitle,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
                                   color: BeenHereColors.textPrimary,

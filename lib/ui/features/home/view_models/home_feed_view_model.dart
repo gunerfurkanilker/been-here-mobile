@@ -9,19 +9,48 @@ class HomeFeedViewModel extends ChangeNotifier with GeographyTreeFilterMixin {
 
   final StaticHomeRoutesRepository _repository;
 
-  // Kullanıcının detay ekranında sorduğu yeni soruları statik oturumda tutar
+  /// Kullanıcının detay ekranında sorduğu yeni soruları statik oturumda tutar
   final Map<String, List<RouteQuestionItem>> _sessionQuestionsByRoute = {};
 
   /// Kullanıcının liste sonunda knob'u %100 doldurarak açtığı ek rota paketi sayısı
   int _unlockedBatchesCount = 0;
   String _lastFilterSignature = '';
 
+  @override
+  int get activeFilterCount =>
+      enabledFilterPillsCount + (isBudgetFilterActive ? 1 : 0);
+
+  @override
+  List<RouteContinentCatalogItem> get searchContinentsCatalog =>
+      StaticHomeRoutesRepository.continentsCatalog;
+
+  @override
+  List<RouteSearchSuggestion> buildSearchSuggestions(String query) =>
+      _repository.buildSearchSuggestions(query);
+
+  @override
+  int countItemsForContinent(ContinentFilter continent) =>
+      _repository.countRoutesForContinent(continent);
+
+  @override
+  int countItemsForRegion(RouteRegionCatalogItem region) =>
+      _repository.countRoutesForRegion(region);
+
+  @override
+  String get itemCountUnitLabel => 'Rota';
+
+  @override
+  void resetToGlobal() {
+    if (isBudgetFilterActive) {
+      resetBudgetFilter();
+    }
+    super.resetToGlobal();
+  }
+
   String _computeFilterSignature() {
-    return '${selectedFullContinents.join(',')}|'
-        '${selectedFullCountryCodes.join(',')}|'
-        '${selectedCities.join(',')}|'
-        '$isNearbyMode|$committedSearchQuery|'
-        '$selectedMinBudgetTl|$selectedMaxBudgetTl';
+    final pillsSig =
+        filterPills.map((p) => '${p.id}:${p.isEnabled}').join(',');
+    return '$pillsSig|$selectedMinBudgetTl|$selectedMaxBudgetTl';
   }
 
   @override
@@ -43,12 +72,8 @@ class HomeFeedViewModel extends ChangeNotifier with GeographyTreeFilterMixin {
       _unlockedBatchesCount = 0;
     }
 
-    final baseRoutes = _repository.getFilteredFeedRoutesByHierarchy(
-      selectedFullContinents: selectedFullContinents,
-      selectedFullCountries: selectedFullCountryCodes,
-      selectedCities: selectedCities,
-      isNearbyPriority: isNearbyMode,
-      searchQuery: committedSearchQuery,
+    final baseRoutes = _repository.getFilteredFeedRoutesByPills(
+      activePills: filterPills,
       minBudgetTl: selectedMinBudgetTl,
       maxBudgetTl: selectedMaxBudgetTl,
     );
@@ -75,16 +100,11 @@ class HomeFeedViewModel extends ChangeNotifier with GeographyTreeFilterMixin {
     notifyListeners();
   }
 
-  /// Çekmece içindeki "Uygula (X Rota)" butonunda
-  /// seçilen ülke/şehir ağacına ve bütçeye ait rota sayısını göstermek için kullanılır.
+  /// Aktif filtre hapları ve bütçe aralığına göre eşleşen rota sayısını döndürür.
   int get geographyFilteredRoutesCount {
     return _repository
-        .getFilteredFeedRoutesByHierarchy(
-          selectedFullContinents: selectedFullContinents,
-          selectedFullCountries: selectedFullCountryCodes,
-          selectedCities: selectedCities,
-          isNearbyPriority: false,
-          searchQuery: committedSearchQuery,
+        .getFilteredFeedRoutesByPills(
+          activePills: filterPills,
           minBudgetTl: selectedMinBudgetTl,
           maxBudgetTl: selectedMaxBudgetTl,
         )

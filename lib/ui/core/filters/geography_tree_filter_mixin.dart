@@ -1,12 +1,17 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../../../data/repositories/static_home_routes_repository.dart';
 import '../../../domain/models/route_feed_models.dart';
+import 'been_here_search_filter_controller.dart';
 
-/// Anasayfa (Rota Akışı) ve Arama (Mekan Keşfi) ekranlarının ortak kullandığı:
-/// 1) Hiyerarşik Coğrafya Ağacı (Kıta > Ülke > Şehir) ve Akıllı Ağaç Arama
-/// 2) Anlık Konum (Yakınımdaki Konumlar - Konum Öncelikli)
-/// 3) 3 Karakter + 5 Saniye Debounce'lu Metin Arama Mixin'i.
-mixin GeographyTreeFilterMixin on ChangeNotifier {
+/// Anasayfa (Rota Akışı), Mekan Arama (Mekan Keşfi) ve Rota Oluşturma
+/// ekranlarının ortak kullandığı:
+/// 1) Toggle / Kaldırılabilir Filtre Hapları & Kıta/Bölge Arama Önerileri (`BeenHereSearchFilterController`)
+/// 2) Hiyerarşik Coğrafya Ağacı (Kıta > Ülke > Şehir) ve Akıllı Ağaç Arama
+/// 3) Anlık Konum (Yakınımdaki Konumlar - Konum Öncelikli)
+/// 4) 3 Karakter + 5 Saniye Debounce'lu Metin Arama Mixin'i.
+mixin GeographyTreeFilterMixin on ChangeNotifier
+    implements BeenHereSearchFilterController {
   /// Kullanıcı yazmayı bıraktıktan sonra otomatik arama için beklenecek süre (5 sn)
   static const Duration searchDebounceDuration = Duration(seconds: 5);
 
@@ -48,9 +53,345 @@ mixin GeographyTreeFilterMixin on ChangeNotifier {
   double _selectedMinBudgetTl = minBudgetLimitTl;
   double _selectedMaxBudgetTl = maxBudgetLimitTl;
 
+  /// Ortak arama paneli ve filtre çubuğunda kullanılan toggle/kaldırılabilir filtre hapları
+  final List<RouteFeedFilterPill> _filterPills = <RouteFeedFilterPill>[];
+
+  static const Map<String, ({String nameTr, String continentName, List<String> cities})>
+      _popularExtraCatalog = {
+    'ES': (
+      nameTr: 'İspanya',
+      continentName: 'Avrupa',
+      cities: ['Madrid', 'Barselona', 'Sevilla', 'Cadiz'],
+    ),
+  };
+
   /// Alt sınıfların sağlaması gereken ülke ve şehir veri kaynakları
   List<CountryFilterOption> getCountriesForContinent(ContinentFilter continent);
   List<String> getCitiesForCountry(String countryCode);
+
+  // --- BeenHereSearchFilterController: Filtre Hapları & Arama Kataloğu ---
+
+  @override
+  List<RouteFeedFilterPill> get filterPills =>
+      List<RouteFeedFilterPill>.unmodifiable(_filterPills);
+
+  List<RouteFeedFilterPill> get enabledFilterPills =>
+      _filterPills.where((p) => p.isEnabled).toList(growable: false);
+
+  @override
+  bool get hasFilterPills => _filterPills.isNotEmpty;
+
+  @override
+  int get enabledFilterPillsCount =>
+      _filterPills.where((p) => p.isEnabled).length;
+
+  @override
+  int get activeFilterCount =>
+      enabledFilterPillsCount + (isBudgetFilterActive ? 1 : 0);
+
+  @override
+  List<RouteContinentCatalogItem> get searchContinentsCatalog =>
+      StaticHomeRoutesRepository.continentsCatalog;
+
+  @override
+  int countItemsForContinent(ContinentFilter continent) =>
+      getCountriesForContinent(continent).length;
+
+  @override
+  int countItemsForRegion(RouteRegionCatalogItem region) =>
+      region.countryCodes.length;
+
+  @override
+  String get itemCountUnitLabel => 'Ülke';
+
+  @override
+  void applyFilterPills(List<RouteFeedFilterPill> pills) {
+    _filterPills.clear();
+    final seenIds = <String>{};
+    for (final pill in pills) {
+      if (seenIds.add(pill.id)) {
+        _filterPills.add(pill);
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Hapın gövdesine dokunulduğunda hapı silmeden aktif/pasif durumunu değiştirir.
+  @override
+  void toggleFilterPill(String pillId) {
+    final index = _filterPills.indexWhere((p) => p.id == pillId);
+    if (index == -1) return;
+    _filterPills[index] = _filterPills[index].copyWith(
+      isEnabled: !_filterPills[index].isEnabled,
+    );
+    notifyListeners();
+  }
+
+  /// Hapın sağındaki X ikonuna basıldığında hapı listeden kalıcı olarak kaldırır.
+  @override
+  void removeFilterPill(String pillId) {
+    final before = _filterPills.length;
+    _filterPills.removeWhere((p) => p.id == pillId);
+    if (_filterPills.length != before) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void clearAllFilterPills() {
+    if (_filterPills.isEmpty) return;
+    _filterPills.clear();
+    notifyListeners();
+  }
+
+  static String _continentDisplayName(ContinentFilter continent) {
+    switch (continent) {
+      case ContinentFilter.global:
+        return 'Global';
+      case ContinentFilter.europe:
+        return 'Avrupa';
+      case ContinentFilter.asia:
+        return 'Asya';
+      case ContinentFilter.northAmerica:
+        return 'Kuzey Amerika';
+      case ContinentFilter.southAmerica:
+        return 'Güney Amerika';
+      case ContinentFilter.africa:
+        return 'Afrika';
+      case ContinentFilter.oceania:
+        return 'Okyanusya';
+    }
+  }
+
+  @override
+  List<RouteSearchSuggestion> buildSearchSuggestions(String query) {
+    final trimmed = query.trim();
+    final q = normalizeTr(trimmed);
+
+    if (q.isEmpty) {
+      return [
+        const RouteSearchSuggestion(
+          id: 'popular:city:marmaris',
+          type: RouteSearchSuggestionType.city,
+          title: 'Marmaris',
+          subtitle: 'Avrupa - Türkiye',
+          pill: RouteFeedFilterPill(
+            id: 'city:marmaris',
+            type: RouteFilterPillType.city,
+            label: 'Marmaris',
+            cityName: 'Marmaris',
+            countryCode: 'TR',
+          ),
+        ),
+        const RouteSearchSuggestion(
+          id: 'popular:city:roma',
+          type: RouteSearchSuggestionType.city,
+          title: 'Roma',
+          subtitle: 'Avrupa - İtalya',
+          pill: RouteFeedFilterPill(
+            id: 'city:roma',
+            type: RouteFilterPillType.city,
+            label: 'Roma',
+            cityName: 'Roma',
+            countryCode: 'IT',
+          ),
+        ),
+        const RouteSearchSuggestion(
+          id: 'popular:city:madrid',
+          type: RouteSearchSuggestionType.city,
+          title: 'Madrid',
+          subtitle: 'Avrupa - İspanya',
+          pill: RouteFeedFilterPill(
+            id: 'city:madrid',
+            type: RouteFilterPillType.city,
+            label: 'Madrid',
+            cityName: 'Madrid',
+            countryCode: 'ES',
+          ),
+        ),
+        const RouteSearchSuggestion(
+          id: 'popular:region:western_europe',
+          type: RouteSearchSuggestionType.region,
+          title: 'Batı Avrupa',
+          subtitle: 'Avrupa - Bölge',
+          pill: RouteFeedFilterPill(
+            id: 'region:western_europe',
+            type: RouteFilterPillType.region,
+            label: 'Batı Avrupa',
+            regionId: 'western_europe',
+            continent: ContinentFilter.europe,
+          ),
+        ),
+        const RouteSearchSuggestion(
+          id: 'popular:continent:EUROPE',
+          type: RouteSearchSuggestionType.continent,
+          title: 'Avrupa',
+          subtitle: 'Kıta',
+          pill: RouteFeedFilterPill(
+            id: 'continent:EUROPE',
+            type: RouteFilterPillType.continent,
+            label: 'Avrupa',
+            continent: ContinentFilter.europe,
+          ),
+        ),
+      ];
+    }
+
+    final suggestions = <RouteSearchSuggestion>[
+      RouteSearchSuggestion(
+        id: 'keyword:$q',
+        type: RouteSearchSuggestionType.keyword,
+        title: '$trimmed ile arama yap',
+        subtitle: '(kelime ile arama)',
+        pill: RouteFeedFilterPill(
+          id: 'keyword:$q',
+          type: RouteFilterPillType.keyword,
+          label: '"$trimmed"',
+          keyword: trimmed,
+        ),
+      ),
+    ];
+
+    final seenCityIds = <String>{};
+    final seenCountryCodes = <String>{};
+    final allCountries = <CountryFilterOption>[
+      for (final continent in selectableContinents)
+        ...getCountriesForContinent(continent),
+    ];
+
+    // 1. Repository şehirleri (ülkelere göre)
+    for (final country in allCountries) {
+      final continentName = _continentDisplayName(country.continent);
+      final cities = getCitiesForCountry(country.code);
+      for (final city in cities) {
+        final normCity = normalizeTr(city);
+        if (normCity.contains(q) && seenCityIds.add(normCity)) {
+          suggestions.add(
+            RouteSearchSuggestion(
+              id: 'city:$normCity',
+              type: RouteSearchSuggestionType.city,
+              title: city,
+              subtitle: '$continentName - ${country.nameTr}',
+              pill: RouteFeedFilterPill(
+                id: 'city:$normCity',
+                type: RouteFilterPillType.city,
+                label: city,
+                cityName: city,
+                countryCode: country.code,
+              ),
+            ),
+          );
+        }
+      }
+    }
+
+    // 2. Popüler katalog şehirleri (örn: Madrid / İspanya)
+    for (final entry in _popularExtraCatalog.entries) {
+      for (final city in entry.value.cities) {
+        final normCity = normalizeTr(city);
+        if (normCity.contains(q) && seenCityIds.add(normCity)) {
+          suggestions.add(
+            RouteSearchSuggestion(
+              id: 'city:$normCity',
+              type: RouteSearchSuggestionType.city,
+              title: city,
+              subtitle: '${entry.value.continentName} - ${entry.value.nameTr}',
+              pill: RouteFeedFilterPill(
+                id: 'city:$normCity',
+                type: RouteFilterPillType.city,
+                label: city,
+                cityName: city,
+                countryCode: entry.key,
+              ),
+            ),
+          );
+        }
+      }
+    }
+
+    // 3. Eşleşen ülkeler
+    for (final country in allCountries) {
+      if ((normalizeTr(country.nameTr).contains(q) ||
+              normalizeTr(country.code) == q) &&
+          seenCountryCodes.add(country.code)) {
+        suggestions.add(
+          RouteSearchSuggestion(
+            id: 'country:${country.code}',
+            type: RouteSearchSuggestionType.country,
+            title: country.nameTr,
+            subtitle: '${_continentDisplayName(country.continent)} - Ülke',
+            pill: RouteFeedFilterPill(
+              id: 'country:${country.code}',
+              type: RouteFilterPillType.country,
+              label: country.nameTr,
+              countryCode: country.code,
+            ),
+          ),
+        );
+      }
+    }
+    for (final entry in _popularExtraCatalog.entries) {
+      if ((normalizeTr(entry.value.nameTr).contains(q) ||
+              normalizeTr(entry.key) == q) &&
+          seenCountryCodes.add(entry.key)) {
+        suggestions.add(
+          RouteSearchSuggestion(
+            id: 'country:${entry.key}',
+            type: RouteSearchSuggestionType.country,
+            title: entry.value.nameTr,
+            subtitle: '${entry.value.continentName} - Ülke',
+            pill: RouteFeedFilterPill(
+              id: 'country:${entry.key}',
+              type: RouteFilterPillType.country,
+              label: entry.value.nameTr,
+              countryCode: entry.key,
+            ),
+          ),
+        );
+      }
+    }
+
+    // 4. Eşleşen alt bölgeler ve kıtalar
+    for (final continent in searchContinentsCatalog) {
+      for (final region in continent.regions) {
+        if (normalizeTr(region.name).contains(q)) {
+          suggestions.add(
+            RouteSearchSuggestion(
+              id: 'region:${region.id}',
+              type: RouteSearchSuggestionType.region,
+              title: region.name,
+              subtitle: '${continent.name} - Bölge',
+              pill: RouteFeedFilterPill(
+                id: 'region:${region.id}',
+                type: RouteFilterPillType.region,
+                label: region.name,
+                regionId: region.id,
+                continent: continent.continent,
+              ),
+            ),
+          );
+        }
+      }
+      if (normalizeTr(continent.name).contains(q)) {
+        suggestions.add(
+          RouteSearchSuggestion(
+            id: 'continent:${continent.continent.code}',
+            type: RouteSearchSuggestionType.continent,
+            title: continent.name,
+            subtitle: 'Kıta',
+            pill: RouteFeedFilterPill(
+              id: 'continent:${continent.continent.code}',
+              type: RouteFilterPillType.continent,
+              label: continent.name,
+              continent: continent.continent,
+            ),
+          ),
+        );
+      }
+    }
+
+    return suggestions;
+  }
 
   /// Türkçe karakter duyarlı küçük harfe çevirme (İ->i, I->ı)
   static String normalizeTr(String input) {
@@ -63,15 +404,20 @@ mixin GeographyTreeFilterMixin on ChangeNotifier {
 
   // --- Konum, Bütçe & Metin Arama Getter ve Aksiyonları ---
 
+  @override
   bool get isNearbyMode => _isNearbyMode;
+  @override
   String get detectedLocationLabel => _detectedLocationLabel;
   String get draftSearchInput => _draftSearchInput;
   String get committedSearchQuery => _committedSearchQuery;
   bool get isWaitingForDebounce => _isWaitingForDebounce;
   int get debounceCycleId => _debounceCycleId;
 
+  @override
   double get selectedMinBudgetTl => _selectedMinBudgetTl;
+  @override
   double get selectedMaxBudgetTl => _selectedMaxBudgetTl;
+  @override
   bool get isBudgetFilterActive =>
       _selectedMinBudgetTl > minBudgetLimitTl ||
       _selectedMaxBudgetTl < maxBudgetLimitTl;
@@ -89,9 +435,11 @@ mixin GeographyTreeFilterMixin on ChangeNotifier {
     return '₺$buffer';
   }
 
+  @override
   String get budgetFilterCompactLabel =>
       '${formatTlCurrency(_selectedMinBudgetTl)} – ${formatTlCurrency(_selectedMaxBudgetTl)}';
 
+  @override
   void updateBudgetRange(double minTl, double maxTl) {
     final clampedMin = minTl.clamp(minBudgetLimitTl, maxBudgetLimitTl);
     final clampedMax = maxTl.clamp(clampedMin, maxBudgetLimitTl);
@@ -104,6 +452,7 @@ mixin GeographyTreeFilterMixin on ChangeNotifier {
     notifyListeners();
   }
 
+  @override
   void resetBudgetFilter() {
     if (!isBudgetFilterActive) return;
     _selectedMinBudgetTl = minBudgetLimitTl;
@@ -111,6 +460,7 @@ mixin GeographyTreeFilterMixin on ChangeNotifier {
     notifyListeners();
   }
 
+  @override
   void toggleNearbySearch() {
     _isNearbyMode = !_isNearbyMode;
     notifyListeners();
@@ -195,10 +545,16 @@ mixin GeographyTreeFilterMixin on ChangeNotifier {
   /// Ağaç içi arama metnine göre eşleşen kıtaları döndürür
   List<ContinentFilter> get filteredContinentsForTree {
     final q = normalizeTr(_treeSearchQuery);
-    if (q.isEmpty) return selectableContinents;
+    if (q.isEmpty) {
+      return selectableContinents
+          .where((continent) => getCountriesForContinent(continent).isNotEmpty)
+          .toList(growable: false);
+    }
 
     return selectableContinents.where((continent) {
-      if (normalizeTr(continent.label).contains(q)) return true;
+      if (normalizeTr(continent.label).contains(q)) {
+        return getCountriesForContinent(continent).isNotEmpty;
+      }
       return getFilteredCountriesForTree(continent).isNotEmpty;
     }).toList(growable: false);
   }
@@ -359,9 +715,14 @@ mixin GeographyTreeFilterMixin on ChangeNotifier {
   // --- Hiyerarşik Coğrafya Ağacı Aksiyonları ---
 
   void resetToGlobal() {
+    final hadPills = _filterPills.isNotEmpty;
+    _filterPills.clear();
     if (isGlobalSelected &&
         _expandedContinents.isEmpty &&
         _expandedCountryCodes.isEmpty) {
+      if (hadPills) {
+        notifyListeners();
+      }
       return;
     }
     _selectedFullContinents.clear();

@@ -52,12 +52,12 @@ class _AnimatedCompassFabState extends State<AnimatedCompassFab>
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: widget.isSelected
-                ? const [
+                ? [
                     BeenHereColors.primaryCompass,
                     BeenHereColors.secondaryAmber,
                   ]
-                : const [
-                    Color(0xFF253A5E),
+                : [
+                    const Color(0xFF253A5E),
                     BeenHereColors.primaryCompass,
                   ],
           ),
