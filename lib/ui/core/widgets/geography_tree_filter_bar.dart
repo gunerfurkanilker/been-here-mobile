@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../domain/models/geography_models.dart';
 import '../../../domain/models/route_feed_models.dart';
 import '../filters/been_here_search_filter_controller.dart';
 import '../filters/geography_tree_filter_mixin.dart';
@@ -49,13 +50,15 @@ class GeographyTreeFilterBar extends StatefulWidget {
   final Key? searchBarKey;
   final Key? budgetButtonKey;
 
-  /// Alttan Yükselen Hiyerarşik Coğrafya Ağacı Çekmecesini (Kıta > Ülke > Şehir) açar.
+  /// Alttan Yükselen Hiyerarşik Coğrafya Ağacı Çekmecesini (Kıta > Ülke > Şehir > İlçe) açar.
   static void showFilterDrawer(
     BuildContext context, {
     required GeographyTreeFilterMixin filterModel,
     String Function()? resultCountLabelBuilder,
   }) {
     filterModel.clearTreeSearchQuery();
+    filterModel.beginGeographyDrawerSession();
+    var didCommit = false;
 
     showModalBottomSheet<void>(
       context: context,
@@ -64,8 +67,17 @@ class GeographyTreeFilterBar extends StatefulWidget {
       builder: (ctx) => _GeographyTreeFilterDrawerSheet(
         filterModel: filterModel,
         resultCountLabelBuilder: resultCountLabelBuilder,
+        onApplyPressed: () {
+          didCommit = true;
+          filterModel.commitGeographyDrawerSelections();
+          Navigator.of(ctx).pop();
+        },
       ),
-    );
+    ).whenComplete(() {
+      if (!didCommit) {
+        filterModel.cancelGeographyDrawerSelections();
+      }
+    });
   }
 
   @override
@@ -703,10 +715,12 @@ class _GeographyTreeFilterBarState extends State<GeographyTreeFilterBar> {
 class _GeographyTreeFilterDrawerSheet extends StatefulWidget {
   const _GeographyTreeFilterDrawerSheet({
     required this.filterModel,
+    required this.onApplyPressed,
     this.resultCountLabelBuilder,
   });
 
   final GeographyTreeFilterMixin filterModel;
+  final VoidCallback onApplyPressed;
   final String Function()? resultCountLabelBuilder;
 
   @override
@@ -717,10 +731,27 @@ class _GeographyTreeFilterDrawerSheet extends StatefulWidget {
 class _GeographyTreeFilterDrawerSheetState
     extends State<_GeographyTreeFilterDrawerSheet> {
   final TextEditingController _treeSearchController = TextEditingController();
+  final Map<String, TextEditingController> _countrySearchControllers =
+      <String, TextEditingController>{};
+
+  TextEditingController _countrySearchControllerFor(
+    String countryCode,
+    String initialQuery,
+  ) {
+    final code = countryCode.trim().toUpperCase();
+    return _countrySearchControllers.putIfAbsent(
+      code,
+      () => TextEditingController(text: initialQuery),
+    );
+  }
 
   @override
   void dispose() {
     _treeSearchController.dispose();
+    for (final controller in _countrySearchControllers.values) {
+      controller.dispose();
+    }
+    _countrySearchControllers.clear();
     super.dispose();
   }
 
@@ -852,7 +883,7 @@ class _GeographyTreeFilterDrawerSheetState
                             ),
                             decoration: InputDecoration(
                               hintText:
-                                  'Kıta, ülke veya şehir ara (Örn: İzmir, İtalya)...',
+                                  'Kıta, ülke, şehir veya ilçe ara (Örn: İzmir, Selçuk)...',
                               hintStyle: TextStyle(
                                 fontSize: 12.5,
                                 color: BeenHereColors.textSecondary,
@@ -878,6 +909,9 @@ class _GeographyTreeFilterDrawerSheetState
                           ),
                           onPressed: () {
                             _treeSearchController.clear();
+                            for (final c in _countrySearchControllers.values) {
+                              c.clear();
+                            }
                             vm.clearTreeSearchQuery();
                           },
                         )
@@ -1014,7 +1048,7 @@ class _GeographyTreeFilterDrawerSheetState
                     const SizedBox(width: 12),
                     Expanded(
                       child: FilledButton.icon(
-                        onPressed: () => Navigator.of(context).pop(),
+                        onPressed: widget.onApplyPressed,
                         icon: const Icon(Icons.check_rounded, size: 18),
                         label: Text(
                           countLabel != null
@@ -1183,6 +1217,10 @@ class _GeographyTreeFilterDrawerSheetState
     final isCountryChecked = vm.isCountryChecked(country.code);
     final isCountryExpanded = vm.isCountryExpanded(country.code);
     final cityPartialBadge = vm.getCountryPartialSelectionBadge(country.code);
+    final totalCityCount = vm.getCitiesForCountry(country.code).length;
+    final countryQuery = vm.getCountryCitySearchQuery(country.code);
+    final hasCountryQuery = countryQuery.trim().isNotEmpty;
+    final showCountrySearch = totalCityCount > 6;
     final cities = vm.getFilteredCitiesForTree(country);
 
     return Container(
@@ -1223,15 +1261,18 @@ class _GeographyTreeFilterDrawerSheetState
                     ),
                     onChanged: (_) => vm.toggleCountryCheckbox(country.code),
                   ),
-                  Text(
-                    '${country.flagEmoji} ${country.nameTr}',
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
-                      color: BeenHereColors.textPrimary,
+                  Expanded(
+                    child: Text(
+                      '${country.flagEmoji} ${country.nameTr}',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: BeenHereColors.textPrimary,
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   if (isCountryChecked)
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -1276,7 +1317,9 @@ class _GeographyTreeFilterDrawerSheetState
                       const SizedBox(width: 4),
                     ] else ...[
                       Text(
-                        '${cities.length} Şehir',
+                        country.publishedRouteCount > 0
+                            ? '${cities.length} Şehir (${country.publishedRouteCount})'
+                            : '${cities.length} Şehir',
                         style: TextStyle(
                           fontSize: 11,
                           color: BeenHereColors.textSecondary,
@@ -1296,72 +1339,348 @@ class _GeographyTreeFilterDrawerSheetState
               ),
             ),
           ),
-          if (!isCountryChecked && isCountryExpanded && cities.isNotEmpty) ...[
+          if (!isCountryChecked &&
+              isCountryExpanded &&
+              (cities.isNotEmpty || hasCountryQuery)) ...[
             Divider(height: 1, color: BeenHereColors.borderSubtle),
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 12, 10),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  for (final city in cities)
-                    Builder(
-                      builder: (context) {
-                        final isCitySelected = vm.isCityChecked(city);
-                        return InkWell(
-                          onTap: () => vm.toggleCityCheckbox(city),
-                          borderRadius: BorderRadius.circular(10),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isCitySelected
-                                  ? BeenHereColors.verifiedEmerald
-                                      .withValues(alpha: 0.22)
-                                  : BeenHereColors.surfaceElevated,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: isCitySelected
-                                    ? BeenHereColors.verifiedEmerald
-                                    : BeenHereColors.borderSubtle,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  isCitySelected
-                                      ? Icons.check_box_rounded
-                                      : Icons.check_box_outline_blank_rounded,
-                                  size: 16,
-                                  color: isCitySelected
-                                      ? BeenHereColors.verifiedEmerald
-                                      : BeenHereColors.textSecondary,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  city,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: isCitySelected
-                                        ? FontWeight.w800
-                                        : FontWeight.w600,
-                                    color: BeenHereColors.textPrimary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
+                  if (showCountrySearch) ...[
+                    _buildCountryInlineSearchField(
+                      vm: vm,
+                      country: country,
+                      totalCityCount: totalCityCount,
+                      countryQuery: countryQuery,
+                      hasCountryQuery: hasCountryQuery,
                     ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (cities.isEmpty && hasCountryQuery)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 10,
+                        horizontal: 4,
+                      ),
+                      child: Text(
+                        '"$countryQuery" ile eşleşen şehir veya ilçe bulunamadı.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: BeenHereColors.textSecondary,
+                        ),
+                      ),
+                    )
+                  else
+                    for (final city in cities)
+                      _buildCityTreeNode(vm, country.code, city),
                 ],
               ),
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  /// Büyük ülkeler için ülke içi sade şehir/ilçe arama kutusu (0 HTTP isteği)
+  Widget _buildCountryInlineSearchField({
+    required GeographyTreeFilterMixin vm,
+    required CountryFilterOption country,
+    required int totalCityCount,
+    required String countryQuery,
+    required bool hasCountryQuery,
+  }) {
+    final controller =
+        _countrySearchControllerFor(country.code, countryQuery);
+    if (controller.text != countryQuery) {
+      controller.value = TextEditingValue(
+        text: countryQuery,
+        selection: TextSelection.collapsed(offset: countryQuery.length),
+      );
+    }
+
+    return Container(
+      height: 36,
+      decoration: BoxDecoration(
+        color: BeenHereColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: hasCountryQuery
+              ? BeenHereColors.primaryCompass.withValues(alpha: 0.7)
+              : BeenHereColors.borderSubtle,
+        ),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 10),
+          Icon(
+            Icons.search_rounded,
+            size: 16,
+            color: hasCountryQuery
+                ? BeenHereColors.primaryCompass
+                : BeenHereColors.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: (value) =>
+                  vm.updateCountryCitySearchQuery(country.code, value),
+              textAlignVertical: TextAlignVertical.center,
+              style: TextStyle(
+                fontSize: 12.5,
+                color: BeenHereColors.textPrimary,
+              ),
+              decoration: InputDecoration(
+                hintText:
+                    '${country.nameTr} içinde şehir veya ilçe ara ($totalCityCount)...',
+                hintStyle: TextStyle(
+                  fontSize: 12,
+                  color: BeenHereColors.textSecondary,
+                ),
+                filled: false,
+                hoverColor: Colors.transparent,
+                isCollapsed: true,
+                contentPadding: EdgeInsets.zero,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+              ),
+            ),
+          ),
+          if (countryQuery.isNotEmpty)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: Icon(
+                Icons.cancel_rounded,
+                size: 16,
+                color: BeenHereColors.textSecondary,
+              ),
+              onPressed: () {
+                controller.clear();
+                vm.clearCountryCitySearchQuery(country.code);
+              },
+            )
+          else
+            const SizedBox(width: 8),
+        ],
+      ),
+    );
+  }
+
+  /// Seviye 3: Şehir Ağaç Düğümü (altında varsa Seviye 4 İlçeler)
+  Widget _buildCityTreeNode(
+    GeographyTreeFilterMixin vm,
+    String countryCode,
+    String city,
+  ) {
+    final isCitySelected = vm.isCityChecked(city);
+    final districts = vm.getFilteredDistrictsForTree(countryCode, city);
+    final hasDistricts = districts.isNotEmpty;
+    final isCityExpanded = vm.isCityExpanded(countryCode, city);
+    final cityPartialBadge = vm.getCityPartialSelectionBadge(countryCode, city);
+    final placesCount = vm.getCityPlacesCount(countryCode, city);
+    final lang = vm.geographyLang;
+
+    final countMetaParts = <String>[
+      if (placesCount != null && placesCount > 0) '$placesCount mekan',
+      if (hasDistricts) '${districts.length} ilçe',
+    ];
+    final countMetaLabel = countMetaParts.join(' • ');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        color: isCitySelected
+            ? BeenHereColors.verifiedEmerald.withValues(alpha: 0.14)
+            : BeenHereColors.surfaceElevated.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isCitySelected
+              ? BeenHereColors.verifiedEmerald
+              : cityPartialBadge != null
+                  ? BeenHereColors.goldLeague.withValues(alpha: 0.5)
+                  : BeenHereColors.borderSubtle.withValues(alpha: 0.75),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () {
+              if (hasDistricts && !isCitySelected) {
+                vm.toggleCityExpanded(countryCode, city);
+              } else {
+                vm.toggleCityCheckbox(city);
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: isCitySelected,
+                    activeColor: BeenHereColors.verifiedEmerald,
+                    visualDensity: VisualDensity.compact,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    onChanged: (_) => vm.toggleCityCheckbox(city),
+                  ),
+                  Expanded(
+                    child: Text(
+                      city,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight:
+                            isCitySelected ? FontWeight.w800 : FontWeight.w600,
+                        color: BeenHereColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  if (isCitySelected)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: BeenHereColors.verifiedEmerald
+                            .withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'Tüm Şehir',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: BeenHereColors.verifiedEmerald,
+                        ),
+                      ),
+                    )
+                  else ...[
+                    if (cityPartialBadge != null) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: BeenHereColors.goldLeague
+                              .withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          cityPartialBadge,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: BeenHereColors.goldLeague,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                    ] else if (countMetaLabel.isNotEmpty) ...[
+                      Text(
+                        countMetaLabel,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: BeenHereColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    if (hasDistricts)
+                      Icon(
+                        isCityExpanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        size: 18,
+                        color: BeenHereColors.textSecondary,
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          if (!isCitySelected && isCityExpanded && hasDistricts) ...[
+            Divider(height: 1, color: BeenHereColors.borderSubtle),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final district in districts)
+                    _buildDistrictChip(vm, city, district, lang),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Seviye 4: İlçe Chip Düğümü
+  Widget _buildDistrictChip(
+    GeographyTreeFilterMixin vm,
+    String city,
+    GeographyDistrictNode district,
+    String lang,
+  ) {
+    final districtName = district.localizedName(lang);
+    final isDistrictSelected = vm.isDistrictChecked(city, districtName);
+    final label = district.placesCount > 0
+        ? '$districtName (${district.placesCount})'
+        : districtName;
+
+    return InkWell(
+      onTap: () => vm.toggleDistrictCheckbox(city, districtName),
+      borderRadius: BorderRadius.circular(9),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: isDistrictSelected
+              ? BeenHereColors.verifiedEmerald.withValues(alpha: 0.22)
+              : BeenHereColors.background.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(
+            color: isDistrictSelected
+                ? BeenHereColors.verifiedEmerald
+                : BeenHereColors.borderSubtle,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isDistrictSelected
+                  ? Icons.check_box_rounded
+                  : Icons.check_box_outline_blank_rounded,
+              size: 15,
+              color: isDistrictSelected
+                  ? BeenHereColors.verifiedEmerald
+                  : BeenHereColors.textSecondary,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight:
+                    isDistrictSelected ? FontWeight.w800 : FontWeight.w600,
+                color: BeenHereColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

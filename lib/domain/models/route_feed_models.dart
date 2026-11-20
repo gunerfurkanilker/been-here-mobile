@@ -1,3 +1,5 @@
+import 'json_parsing_utils.dart';
+
 enum ContinentFilter {
   global('GLOBAL', '🌍 Global'),
   europe('EUROPE', '🇪🇺 Avrupa'),
@@ -10,6 +12,20 @@ enum ContinentFilter {
   const ContinentFilter(this.code, this.label);
   final String code;
   final String label;
+
+  /// Backend kıta kodundan (`EUROPE`, `ASIA`, `NORTH_AMERICA` vb.) enum döndürür.
+  static ContinentFilter fromCode(String? code) {
+    final normalized = code?.trim().toUpperCase();
+    if (normalized == null || normalized.isEmpty) {
+      return ContinentFilter.global;
+    }
+    for (final value in ContinentFilter.values) {
+      if (value.code == normalized) {
+        return value;
+      }
+    }
+    return ContinentFilter.global;
+  }
 }
 
 class CountryFilterOption {
@@ -114,7 +130,182 @@ class PublishedRouteFeedItem {
     required this.stops,
     required this.stays,
     required this.questions,
+    this.totalStopsCount,
   });
+
+  /// Backend (`GET /places/:id/routes` vb.) JSON yanıtından güvenli şekilde model üretir.
+  factory PublishedRouteFeedItem.fromJson(Map<String, dynamic> json) {
+    final authorMap = json['author'] is Map<String, dynamic>
+        ? json['author'] as Map<String, dynamic>
+        : (json['creator'] is Map<String, dynamic>
+            ? json['creator'] as Map<String, dynamic>
+            : null);
+
+    final rawCountryCodes = parseJsonStringList(
+      json['country_codes'] ?? json['countries'],
+    );
+    final rawCountryNames = parseJsonStringList(json['country_names']);
+    final resolvedCountryNames =
+        rawCountryNames.isNotEmpty ? rawCountryNames : rawCountryCodes;
+
+    final rawStops = json['stops'];
+    final parsedStops = rawStops is List
+        ? rawStops
+            .whereType<Map<String, dynamic>>()
+            .map(_routeStopFromJson)
+            .toList(growable: false)
+        : const <RouteStopDetailItem>[];
+
+    final rawStays = json['stays'];
+    final parsedStays = rawStays is List
+        ? rawStays
+            .whereType<Map<String, dynamic>>()
+            .map(_routeStayFromJson)
+            .toList(growable: false)
+        : const <RouteStayDetailItem>[];
+
+    final rawQuestions = json['questions'];
+    final parsedQuestions = rawQuestions is List
+        ? rawQuestions
+            .whereType<Map<String, dynamic>>()
+            .map(_routeQuestionFromJson)
+            .toList(growable: false)
+        : const <RouteQuestionItem>[];
+
+    final totalStops = json.containsKey('total_stops_count') &&
+            json['total_stops_count'] != null
+        ? parseJsonInt(json['total_stops_count'])
+        : null;
+
+    final rawAuthorUsername =
+        json['author_username']?.toString() ??
+        authorMap?['username']?.toString() ??
+        '';
+    final rawAuthorDisplayName =
+        json['author_display_name']?.toString() ??
+        authorMap?['display_name']?.toString() ??
+        '';
+    final rawAuthorRank =
+        json['author_rank_label']?.toString() ??
+        authorMap?['rank_label']?.toString() ??
+        '';
+
+    final rawDateRange =
+        json['date_range_text']?.toString() ??
+        json['date_range_label']?.toString() ??
+        json['flexible_period']?.toString() ??
+        '';
+
+    return PublishedRouteFeedItem(
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      authorUsername:
+          rawAuthorUsername.trim().isNotEmpty ? rawAuthorUsername : 'gezgin',
+      authorDisplayName: rawAuthorDisplayName.trim().isNotEmpty
+          ? rawAuthorDisplayName
+          : 'Been Here Gezgini',
+      authorRankLabel:
+          rawAuthorRank.trim().isNotEmpty ? rawAuthorRank : 'Gezgin',
+      continent: ContinentFilter.fromCode(json['continent']?.toString()),
+      countryCodes: rawCountryCodes,
+      countryNames: resolvedCountryNames,
+      cities: parseJsonStringList(json['cities']),
+      featuredMediaUrls: parseJsonStringList(json['featured_media_urls']),
+      previewPlaceNames: parseJsonStringList(json['preview_place_names']),
+      dateRangeText:
+          rawDateRange.trim().isNotEmpty ? rawDateRange : 'Esnek Tarih',
+      adultsCount: parseJsonInt(json['adults_count'], fallback: 1),
+      childrenCount: parseJsonInt(json['children_count']),
+      durationDays: parseJsonInt(json['duration_days'], fallback: 1),
+      estimatedBudgetUsd: parseJsonDouble(
+        json['estimated_total_budget_usd'] ?? json['estimated_budget_usd'],
+      ),
+      estimatedBudgetLocal: parseJsonDouble(
+        json['estimated_total_budget'] ?? json['estimated_budget_local'],
+      ),
+      localCurrencySymbol: _resolveCurrencySymbol(
+        json['local_currency_symbol']?.toString() ??
+            json['currency']?.toString(),
+      ),
+      budgetBreakdown: parseJsonDoubleMap(json['budget_breakdown']),
+      forkCount: parseJsonInt(json['fork_count']),
+      isBoosted: parseJsonBool(json['is_boosted']),
+      isQaEnabled: parseJsonBool(json['is_qa_enabled'], fallback: true),
+      stops: parsedStops,
+      stays: parsedStays,
+      questions: parsedQuestions,
+      totalStopsCount: totalStops,
+    );
+  }
+
+  static RouteStopDetailItem _routeStopFromJson(Map<String, dynamic> json) {
+    return RouteStopDetailItem(
+      id: json['id']?.toString() ?? '',
+      orderIndex: parseJsonInt(json['order_index']),
+      dayNumber: parseJsonInt(json['day_number'], fallback: 1),
+      placeName: json['place_name']?.toString() ?? '',
+      city: json['city']?.toString() ?? '',
+      uiCategory: json['ui_category']?.toString() ?? 'DESTINATION',
+      verificationType: json['verification_type']?.toString() ?? 'MANUAL',
+      rating: parseJsonInt(json['rating'], fallback: 5),
+      comment: json['comment']?.toString() ?? '',
+      vibes: parseJsonStringList(json['vibes']),
+      warnings: parseJsonStringList(json['warnings']),
+      photoUrls: parseJsonStringList(json['photo_urls']),
+    );
+  }
+
+  static RouteStayDetailItem _routeStayFromJson(Map<String, dynamic> json) {
+    return RouteStayDetailItem(
+      stayTypeLabel:
+          json['stay_type_label']?.toString() ??
+          json['stay_type']?.toString() ??
+          'Konaklama',
+      regionOrHotelName:
+          json['region_or_hotel_name']?.toString() ??
+          json['name']?.toString() ??
+          '',
+      nightsCount: parseJsonInt(json['nights_count'], fallback: 1),
+    );
+  }
+
+  static RouteQuestionItem _routeQuestionFromJson(Map<String, dynamic> json) {
+    return RouteQuestionItem(
+      id: json['id']?.toString() ?? '',
+      askerUsername: json['asker_username']?.toString() ?? 'gezgin',
+      questionText: json['question_text']?.toString() ?? '',
+      createdAtLabel:
+          json['created_at_label']?.toString() ??
+          json['created_at']?.toString() ??
+          '',
+      answerText: json['answer_text']?.toString(),
+    );
+  }
+
+  static String _resolveCurrencySymbol(String? rawCurrency) {
+    final code = rawCurrency?.trim().toUpperCase();
+    switch (code) {
+      case null:
+      case '':
+      case 'TRY':
+        return '₺';
+      case 'USD':
+        return '\$';
+      case 'EUR':
+        return '€';
+      case 'GBP':
+        return '£';
+      case 'JPY':
+        return '¥';
+      case 'KRW':
+        return '₩';
+      case 'CHF':
+        return 'CHF';
+      default:
+        return rawCurrency!.trim();
+    }
+  }
 
   final String id;
   final String title;
@@ -147,8 +338,11 @@ class PublishedRouteFeedItem {
   final List<RouteStopDetailItem> stops;
   final List<RouteStayDetailItem> stays;
   final List<RouteQuestionItem> questions;
+  final int? totalStopsCount;
 
   int get travelersCount => adultsCount + childrenCount;
+
+  int get effectiveStopsCount => totalStopsCount ?? stops.length;
 
   List<String> get cappedFeaturedMedia =>
       featuredMediaUrls.take(5).toList(growable: false);
@@ -162,6 +356,7 @@ enum RouteFilterPillType {
   region,
   country,
   city,
+  district,
   keyword,
 }
 
@@ -175,6 +370,7 @@ class RouteFeedFilterPill {
     this.regionId,
     this.countryCode,
     this.cityName,
+    this.districtName,
     this.keyword,
   });
 
@@ -186,6 +382,7 @@ class RouteFeedFilterPill {
   final String? regionId;
   final String? countryCode;
   final String? cityName;
+  final String? districtName;
   final String? keyword;
 
   RouteFeedFilterPill copyWith({
@@ -200,6 +397,7 @@ class RouteFeedFilterPill {
       regionId: regionId,
       countryCode: countryCode,
       cityName: cityName,
+      districtName: districtName,
       keyword: keyword,
     );
   }
@@ -239,6 +437,7 @@ class RouteContinentCatalogItem {
 
 enum RouteSearchSuggestionType {
   keyword,
+  district,
   city,
   country,
   region,

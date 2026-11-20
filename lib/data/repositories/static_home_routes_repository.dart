@@ -1270,6 +1270,28 @@ class StaticHomeRoutesRepository {
         if (target.isEmpty) return false;
         return route.cities.any((c) => _normalizeTr(c) == target) ||
             route.stops.any((s) => _normalizeTr(s.city) == target);
+      case RouteFilterPillType.district:
+        final districtTarget = _normalizeTr(pill.districtName ?? '');
+        final cityTarget = _normalizeTr(pill.cityName ?? '');
+        if (districtTarget.isEmpty) {
+          return cityTarget.isNotEmpty &&
+              (route.cities.any((c) => _normalizeTr(c) == cityTarget) ||
+                  route.stops.any((s) => _normalizeTr(s.city) == cityTarget));
+        }
+        final matchesDistrictText =
+            _normalizeTr(route.title).contains(districtTarget) ||
+                _normalizeTr(route.description).contains(districtTarget) ||
+                route.previewPlaceNames
+                    .any((p) => _normalizeTr(p).contains(districtTarget)) ||
+                route.stops.any(
+                  (s) =>
+                      _normalizeTr(s.placeName).contains(districtTarget) ||
+                      _normalizeTr(s.city).contains(districtTarget),
+                );
+        if (matchesDistrictText) return true;
+        return cityTarget.isNotEmpty &&
+            (route.cities.any((c) => _normalizeTr(c) == cityTarget) ||
+                route.stops.any((s) => _normalizeTr(s.city) == cityTarget));
       case RouteFilterPillType.keyword:
         return true;
     }

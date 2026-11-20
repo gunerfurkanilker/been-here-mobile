@@ -281,7 +281,7 @@ class _BeenHereShellScaffoldState extends State<BeenHereShellScaffold>
                           ? BeenHereColors.primaryCompass
                               .withValues(alpha: 0.16)
                           : BeenHereLightColors.softSky
-                              .withValues(alpha: 0.45),
+                              .withValues(alpha: 0.55),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: PhosphorIcon(
@@ -444,8 +444,8 @@ class _LiquidGlassBottomNavBar extends StatelessWidget {
                           BeenHereColors.surface.withValues(alpha: 0.22),
                         ]
                       : [
-                          BeenHereColors.surface.withValues(alpha: 0.82),
-                          BeenHereLightColors.softSky.withValues(alpha: 0.42),
+                          BeenHereColors.surface.withValues(alpha: 0.86),
+                          BeenHereLightColors.softSky.withValues(alpha: 0.45),
                         ],
                 ),
                 border: Border.all(
@@ -628,12 +628,6 @@ class _ThemeToggleGlassButton extends StatelessWidget {
                   color: isDark
                       ? BeenHereColors.surface.withValues(alpha: 0.8)
                       : BeenHereColors.surfaceElevated,
-                  border: Border.all(
-                    color: isDark
-                        ? BeenHereColors.goldLeague.withValues(alpha: 0.35)
-                        : BeenHereColors.borderSubtle,
-                    width: 1,
-                  ),
                   boxShadow: [
                     if (isDark)
                       BoxShadow(

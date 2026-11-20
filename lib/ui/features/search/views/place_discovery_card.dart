@@ -17,6 +17,11 @@ class PlaceDiscoveryCard extends StatefulWidget {
     required this.onTapFlagButton,
     required this.onTapAddToRouteButton,
     required this.onTapRelatedRoutesButton,
+    this.canLoadSimilarPlaces = false,
+    this.hasLoadedSimilarPlaces = true,
+    this.isLoadingSimilarPlaces = false,
+    this.onExpandSimilarPlaces,
+    this.onTapDetailButton,
   });
 
   final PlaceDiscoveryItem place;
@@ -28,6 +33,11 @@ class PlaceDiscoveryCard extends StatefulWidget {
   final VoidCallback onTapFlagButton;
   final VoidCallback onTapAddToRouteButton;
   final VoidCallback onTapRelatedRoutesButton;
+  final bool canLoadSimilarPlaces;
+  final bool hasLoadedSimilarPlaces;
+  final bool isLoadingSimilarPlaces;
+  final VoidCallback? onExpandSimilarPlaces;
+  final VoidCallback? onTapDetailButton;
 
   @override
   State<PlaceDiscoveryCard> createState() => _PlaceDiscoveryCardState();
@@ -75,9 +85,14 @@ class _PlaceDiscoveryCardState extends State<PlaceDiscoveryCard>
         photos.isEmpty ? 0 : (_currentPhotoIndex % photos.length);
     final currentPhotoAuthor = place.photoAuthorForIndex(safePhotoIndex);
 
-    final isFlagged = widget.savedLists.isNotEmpty;
+    final isFlagged = widget.savedLists.isNotEmpty || place.isFlagged;
     final similarPlaces = widget.similarPlaces;
     final topTags = place.communityVibes.take(3).toList(growable: false);
+    final relatedRouteCount = widget.relatedRoutes.isNotEmpty
+        ? widget.relatedRoutes.length
+        : place.relatedRouteIds.length;
+    final showSimilarSection =
+        similarPlaces.isNotEmpty || widget.canLoadSimilarPlaces;
 
     return RepaintBoundary(
       child: Container(
@@ -262,7 +277,8 @@ class _PlaceDiscoveryCardState extends State<PlaceDiscoveryCard>
                                     ),
                                   ),
                                 ),
-                                if (widget.showDistanceBadge) ...[
+                                if (widget.showDistanceBadge &&
+                                    place.hasDistance) ...[
                                   Padding(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 5,
@@ -412,17 +428,73 @@ class _PlaceDiscoveryCardState extends State<PlaceDiscoveryCard>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                if (place.isClosed ||
+                                    place.warnings.isNotEmpty) ...[
+                                  Container(
+                                    margin: const EdgeInsets.only(bottom: 6),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3.5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: (place.isClosed
+                                              ? Colors.redAccent
+                                              : Colors.amberAccent)
+                                          .withValues(alpha: 0.24),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: (place.isClosed
+                                                ? Colors.redAccent
+                                                : Colors.amberAccent)
+                                            .withValues(alpha: 0.65),
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        PhosphorIcon(
+                                          PhosphorIcons.warning(
+                                            PhosphorIconsStyle.fill,
+                                          ),
+                                          size: 12,
+                                          color: place.isClosed
+                                              ? Colors.redAccent
+                                              : Colors.amberAccent,
+                                        ),
+                                        const SizedBox(width: 5),
+                                        Flexible(
+                                          child: Text(
+                                            place.statusWarning ??
+                                                place.openingHoursWarning ??
+                                                place.warnings.first,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                                 // Mekan Başlığı
-                                Text(
-                                  place.name,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.white,
-                                    height: 1.2,
-                                    letterSpacing: -0.2,
+                                GestureDetector(
+                                  onTap: widget.onTapDetailButton,
+                                  child: Text(
+                                    place.name,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                      height: 1.2,
+                                      letterSpacing: -0.2,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 5),
@@ -602,7 +674,7 @@ class _PlaceDiscoveryCardState extends State<PlaceDiscoveryCard>
                                   ),
                                 ],
                               ),
-                              if (widget.relatedRoutes.isNotEmpty) ...[
+                              if (relatedRouteCount > 0) ...[
                                 const SizedBox(height: 6),
                                 GestureDetector(
                                   onTap: widget.onTapRelatedRoutesButton,
@@ -619,7 +691,7 @@ class _PlaceDiscoveryCardState extends State<PlaceDiscoveryCard>
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
-                                        '${widget.relatedRoutes.length} Rotada Geçiyor',
+                                        '$relatedRouteCount Rotada Geçiyor',
                                         style: TextStyle(
                                           fontSize: 10.5,
                                           fontWeight: FontWeight.w600,
@@ -637,254 +709,357 @@ class _PlaceDiscoveryCardState extends State<PlaceDiscoveryCard>
                       ),
                     ),
 
-                    // 3.2. Benzer Lokasyonlar Aç/Kapat Butonu ve Açılır Slider
-                    if (similarPlaces.isNotEmpty) ...[
+                    // 3.2. Benzer Lokasyonlar & Detay / Katkı Aksiyonları
+                    if (showSimilarSection || widget.onTapDetailButton != null) ...[
                       const SizedBox(height: 10),
                       Padding(
                         padding: const EdgeInsets.only(right: 14),
-                        child: Material(
-                          color: Colors.black.withValues(alpha: 0.40),
-                          borderRadius: BorderRadius.circular(10),
-                          child: InkWell(
-                            onTap: () {
-                              setState(() {
-                                _isSimilarLocationsExpanded =
-                                    !_isSimilarLocationsExpanded;
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(10),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.14),
-                                  width: 0.8,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  PhosphorIcon(
-                                    PhosphorIcons.compass(
-                                      PhosphorIconsStyle.duotone,
-                                    ),
-                                    size: 14,
-                                    color: BeenHereColors.primaryCompass,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    _isSimilarLocationsExpanded
-                                        ? 'Benzer Lokasyonları Gizle'
-                                        : 'Benzer Lokasyonlar (${similarPlaces.length})',
-                                    style: const TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 5),
-                                  PhosphorIcon(
-                                    _isSimilarLocationsExpanded
-                                        ? PhosphorIcons.caretDown(
-                                            PhosphorIconsStyle.bold,
-                                          )
-                                        : PhosphorIcons.caretUp(
-                                            PhosphorIconsStyle.bold,
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              if (showSimilarSection)
+                                Material(
+                                  color: Colors.black.withValues(alpha: 0.40),
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: InkWell(
+                                    onTap: () {
+                                      final nextExpanded =
+                                          !_isSimilarLocationsExpanded;
+                                      setState(() {
+                                        _isSimilarLocationsExpanded =
+                                            nextExpanded;
+                                      });
+                                      if (nextExpanded &&
+                                          !widget.hasLoadedSimilarPlaces) {
+                                        widget.onExpandSimilarPlaces?.call();
+                                      }
+                                    },
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.14),
+                                          width: 0.8,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          PhosphorIcon(
+                                            PhosphorIcons.compass(
+                                              PhosphorIconsStyle.duotone,
+                                            ),
+                                            size: 14,
+                                            color: BeenHereColors.primaryCompass,
                                           ),
-                                    size: 12,
-                                    color: Colors.white.withValues(alpha: 0.85),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            _isSimilarLocationsExpanded
+                                                ? 'Benzer Lokasyonları Gizle'
+                                                : (widget.hasLoadedSimilarPlaces
+                                                    ? 'Benzer Lokasyonlar (${similarPlaces.length})'
+                                                    : 'Benzer Lokasyonlar'),
+                                            style: const TextStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 5),
+                                          PhosphorIcon(
+                                            _isSimilarLocationsExpanded
+                                                ? PhosphorIcons.caretDown(
+                                                    PhosphorIconsStyle.bold,
+                                                  )
+                                                : PhosphorIcons.caretUp(
+                                                    PhosphorIconsStyle.bold,
+                                                  ),
+                                            size: 12,
+                                            color: Colors.white
+                                                .withValues(alpha: 0.85),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
-                                ],
-                              ),
-                            ),
+                                ),
+                              if (showSimilarSection &&
+                                  widget.onTapDetailButton != null)
+                                const SizedBox(width: 8),
+                              if (widget.onTapDetailButton != null)
+                                Material(
+                                  color: Colors.black.withValues(alpha: 0.40),
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: InkWell(
+                                    onTap: widget.onTapDetailButton,
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.14),
+                                          width: 0.8,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          PhosphorIcon(
+                                            PhosphorIcons.info(
+                                              PhosphorIconsStyle.duotone,
+                                            ),
+                                            size: 14,
+                                            color: Colors.white
+                                                .withValues(alpha: 0.92),
+                                          ),
+                                          const SizedBox(width: 5),
+                                          const Text(
+                                            'Detay / Katkı',
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ),
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 240),
-                        curve: Curves.easeOutCubic,
-                        alignment: Alignment.topCenter,
-                        child: _isSimilarLocationsExpanded
-                            ? Padding(
-                                padding: const EdgeInsets.only(top: 10),
-                                child: SizedBox(
-                                  height: 104,
-                                  child: ScrollConfiguration(
-                                    behavior: ScrollConfiguration.of(context)
-                                        .copyWith(
-                                      dragDevices: const {
-                                        PointerDeviceKind.touch,
-                                        PointerDeviceKind.mouse,
-                                        PointerDeviceKind.trackpad,
-                                      },
-                                    ),
-                                    child: PageView.builder(
-                                      key: PageStorageKey<String>(
-                                        'similar-places-slider-${place.id}',
-                                      ),
-                                      controller: _similarPlacesController,
-                                      padEnds: false,
-                                      itemBuilder: (context, rawIndex) {
-                                        final actualIndex =
-                                            rawIndex % similarPlaces.length;
-                                        final similar =
-                                            similarPlaces[actualIndex];
-                                        final similarPhoto =
-                                            similar.cappedPhotos.isNotEmpty
-                                                ? similar.cappedPhotos.first
-                                                : '';
-
-                                        return Padding(
-                                          padding:
-                                              const EdgeInsets.only(right: 10),
-                                          child: GestureDetector(
-                                            onTap: () {
-                                              _similarPlacesController
-                                                  .animateToPage(
-                                                rawIndex,
-                                                duration: const Duration(
-                                                  milliseconds: 260,
-                                                ),
-                                                curve: Curves.easeOutCubic,
-                                              );
-                                            },
-                                            child: Container(
-                                              decoration: BoxDecoration(
-                                                color: Colors.black
-                                                    .withValues(alpha: 0.36),
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                              clipBehavior: Clip.antiAlias,
-                                              child: Stack(
-                                                fit: StackFit.expand,
-                                                children: [
-                                                  if (similarPhoto.isNotEmpty)
-                                                    Image.network(
-                                                      similarPhoto,
-                                                      fit: BoxFit.cover,
-                                                      cacheWidth: 360,
-                                                      gaplessPlayback: true,
-                                                      filterQuality:
-                                                          FilterQuality.low,
-                                                      errorBuilder:
-                                                          (_, _, _) =>
-                                                              Container(
-                                                        color: Colors.black
-                                                            .withValues(
-                                                          alpha: 0.35,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  const DecoratedBox(
-                                                    decoration: BoxDecoration(
-                                                      gradient: LinearGradient(
-                                                        begin:
-                                                            Alignment.topCenter,
-                                                        end: Alignment
-                                                            .bottomCenter,
-                                                        stops: [0.22, 1.0],
-                                                        colors: [
-                                                          Color(0x00000000),
-                                                          Color(0x9E060B13),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  Positioned(
-                                                    left: 10,
-                                                    right: 10,
-                                                    bottom: 8,
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                        Text(
-                                                          similar.name,
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
-                                                          style:
-                                                              const TextStyle(
-                                                            fontSize: 13,
-                                                            fontWeight:
-                                                                FontWeight.w700,
-                                                            color: Colors.white,
-                                                          ),
-                                                        ),
-                                                        const SizedBox(
-                                                          height: 2,
-                                                        ),
-                                                        Row(
-                                                          children: [
-                                                            PhosphorIcon(
-                                                              PhosphorIcons
-                                                                  .mapPin(
-                                                                PhosphorIconsStyle
-                                                                    .fill,
-                                                              ),
-                                                              size: 10.5,
-                                                              color: Colors
-                                                                  .white
-                                                                  .withValues(
-                                                                alpha: 0.78,
-                                                              ),
-                                                            ),
-                                                            const SizedBox(
-                                                              width: 3,
-                                                            ),
-                                                            Expanded(
-                                                              child: Text(
-                                                                '${similar.city}, ${similar.countryName}',
-                                                                maxLines: 1,
-                                                                overflow:
-                                                                    TextOverflow
-                                                                        .ellipsis,
-                                                                style:
-                                                                    TextStyle(
-                                                                  fontSize:
-                                                                      10.5,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w500,
-                                                                  color: Colors
-                                                                      .white
-                                                                      .withValues(
-                                                                    alpha: 0.82,
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
+                      if (showSimilarSection)
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 240),
+                          curve: Curves.easeOutCubic,
+                          alignment: Alignment.topCenter,
+                          child: _isSimilarLocationsExpanded
+                              ? Padding(
+                                  padding: const EdgeInsets.only(top: 10),
+                                  child: _buildSimilarLocationsContent(
+                                    context,
+                                    place,
+                                    similarPlaces,
                                   ),
-                                ),
-                              )
-                            : const SizedBox.shrink(),
-                      ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
                     ],
                   ],
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSimilarLocationsContent(
+    BuildContext context,
+    PlaceDiscoveryItem place,
+    List<PlaceDiscoveryItem> similarPlaces,
+  ) {
+    if (widget.isLoadingSimilarPlaces && similarPlaces.isEmpty) {
+      return Container(
+        height: 104,
+        margin: const EdgeInsets.only(right: 14),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.40),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.14),
+            width: 0.8,
+          ),
+        ),
+        child: const Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+              SizedBox(width: 10),
+              Text(
+                'Yakındaki benzer mekanlar yükleniyor...',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (similarPlaces.isEmpty) {
+      return Container(
+        height: 76,
+        margin: const EdgeInsets.only(right: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.36),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.14),
+            width: 0.8,
+          ),
+        ),
+        child: const Center(
+          child: Text(
+            'Yakın çevrede aynı kategoride mekan bulunamadı.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 104,
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: const {
+            PointerDeviceKind.touch,
+            PointerDeviceKind.mouse,
+            PointerDeviceKind.trackpad,
+          },
+        ),
+        child: PageView.builder(
+          key: PageStorageKey<String>(
+            'similar-places-slider-${place.id}',
+          ),
+          controller: _similarPlacesController,
+          padEnds: false,
+          itemBuilder: (context, rawIndex) {
+            final actualIndex = rawIndex % similarPlaces.length;
+            final similar = similarPlaces[actualIndex];
+            final similarPhoto = similar.cappedPhotos.isNotEmpty
+                ? similar.cappedPhotos.first
+                : '';
+
+            return Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: GestureDetector(
+                onTap: () {
+                  _similarPlacesController.animateToPage(
+                    rawIndex,
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeOutCubic,
+                  );
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.36),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (similarPhoto.isNotEmpty)
+                        Image.network(
+                          similarPhoto,
+                          fit: BoxFit.cover,
+                          cacheWidth: 360,
+                          gaplessPlayback: true,
+                          filterQuality: FilterQuality.low,
+                          errorBuilder: (_, _, _) => Container(
+                            color: Colors.black.withValues(alpha: 0.35),
+                          ),
+                        ),
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            stops: [0.22, 1.0],
+                            colors: [
+                              Color(0x00000000),
+                              Color(0x9E060B13),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 10,
+                        right: 10,
+                        bottom: 8,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              similar.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                PhosphorIcon(
+                                  PhosphorIcons.mapPin(
+                                    PhosphorIconsStyle.fill,
+                                  ),
+                                  size: 10.5,
+                                  color: Colors.white.withValues(alpha: 0.78),
+                                ),
+                                const SizedBox(width: 3),
+                                Expanded(
+                                  child: Text(
+                                    '${similar.city}, ${similar.countryName}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.white.withValues(
+                                        alpha: 0.82,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );

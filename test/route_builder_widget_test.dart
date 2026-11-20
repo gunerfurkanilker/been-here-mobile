@@ -1,7 +1,16 @@
+import 'dart:convert';
+
+import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:been_here_mobile/data/services/been_here_api_client.dart';
+import 'package:been_here_mobile/data/services/geography_api_service.dart';
+import 'package:been_here_mobile/data/stores/geography_store.dart';
+import 'package:been_here_mobile/domain/models/geography_models.dart';
 import 'package:been_here_mobile/domain/models/route_feed_models.dart';
 import 'package:been_here_mobile/ui/core/theme/been_here_theme.dart';
 import 'package:been_here_mobile/ui/core/widgets/been_here_search_panel.dart';
@@ -720,6 +729,1812 @@ void main() {
         expect(vm.selectedCountryCodes, {'ES'});
         expect(vm.selectedCityKeys, {'ES:Sevilla', 'ES:Cadiz'});
         expect(find.text('1 Ülke, 2 Şehir Seçildi'), findsOneWidget);
+      },
+    );
+  });
+
+  group('RouteBuilderViewModel - GeographyStore DB Entegrasyonu', () {
+    GeographyStore buildTestGeographyStore() {
+      final payload = <String, dynamic>{
+        'lang': 'tr',
+        'continents': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'cont-europe',
+            'code': 'EUROPE',
+            'name': 'Avrupa',
+            'default_name': 'Avrupa',
+            'name_translations': <String, String>{
+              'tr': 'Avrupa',
+              'en': 'Europe',
+            },
+            'image_url': 'https://cdn.beenhere.dev/geo/europe.jpg',
+            'places_count': 10,
+            'routes_count': 5,
+            'regions': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 'balkans',
+                'uuid': 'reg-balkans-uuid',
+                'code': 'balkans',
+                'continent_code': 'EUROPE',
+                'name': 'Balkanlar',
+                'default_name': 'Balkanlar',
+                'name_translations': <String, String>{
+                  'tr': 'Balkanlar',
+                  'en': 'Balkans',
+                },
+                'image_url': 'https://cdn.beenhere.dev/geo/balkans.jpg',
+                'country_codes': <String>['TR'],
+                'country_names': <String>['Türkiye'],
+                'places_count': 5,
+                'routes_count': 3,
+              },
+            ],
+            'countries': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 'country-tr',
+                'code': 'TR',
+                'continent_code': 'EUROPE',
+                'name': 'Türkiye',
+                'default_name': 'Türkiye',
+                'name_translations': <String, String>{
+                  'tr': 'Türkiye',
+                  'en': 'Turkey',
+                },
+                'aliases': <String>['Turkiye'],
+                'flag_emoji': '🇹🇷',
+                'image_url': 'https://cdn.beenhere.dev/geo/tr.jpg',
+                'places_count': 5,
+                'routes_count': 3,
+                'cities': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'id': 'city-izmir',
+                    'slug': 'tr:izmir',
+                    'country_code': 'TR',
+                    'name': 'İzmir',
+                    'default_name': 'İzmir',
+                    'name_translations': <String, String>{
+                      'tr': 'İzmir',
+                      'en': 'Izmir',
+                    },
+                    'image_url': 'https://cdn.beenhere.dev/geo/izmir.jpg',
+                    'is_popular': true,
+                    'places_count': 3,
+                    'routes_count': 2,
+                  },
+                ],
+              },
+              <String, dynamic>{
+                'id': 'country-it',
+                'code': 'IT',
+                'continent_code': 'EUROPE',
+                'name': 'İtalya',
+                'default_name': 'İtalya',
+                'name_translations': <String, String>{
+                  'tr': 'İtalya',
+                  'en': 'Italy',
+                },
+                'aliases': <String>['Italia'],
+                'flag_emoji': '🇮🇹',
+                'image_url': 'https://cdn.beenhere.dev/geo/it.jpg',
+                'places_count': 5,
+                'routes_count': 2,
+                'cities': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'id': 'city-rome',
+                    'slug': 'it:roma',
+                    'country_code': 'IT',
+                    'name': 'Roma',
+                    'default_name': 'Roma',
+                    'name_translations': <String, String>{
+                      'tr': 'Roma',
+                      'en': 'Rome',
+                    },
+                    'image_url': 'https://cdn.beenhere.dev/geo/rome.jpg',
+                    'is_popular': true,
+                    'places_count': 3,
+                    'routes_count': 2,
+                  },
+                  <String, dynamic>{
+                    'id': 'city-milano',
+                    'slug': 'it:milano',
+                    'country_code': 'IT',
+                    'name': 'Milano',
+                    'default_name': 'Milano',
+                    'name_translations': <String, String>{
+                      'tr': 'Milano',
+                      'en': 'Milan',
+                    },
+                    'image_url': 'https://cdn.beenhere.dev/geo/milano.jpg',
+                    'is_popular': false,
+                    'places_count': 2,
+                    'routes_count': 0,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      final client = MockClient(
+        (_) async => http.Response.bytes(
+          utf8.encode(
+            jsonEncode(<String, dynamic>{'success': true, 'data': payload}),
+          ),
+          200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        ),
+      );
+      return GeographyStore(
+        apiService: GeographyApiService(
+          apiClient: BeenHereApiClient(
+            baseUrl: 'https://api.beenhere.test',
+            client: client,
+          ),
+        ),
+      );
+    }
+
+    test('Yüklü GeographyStore ile Balkanlar ve çoklu dil ülke/şehir filtrelemesi çalışır', () async {
+      final store = buildTestGeographyStore();
+      final vm = RouteBuilderViewModel(geographyStore: store);
+
+      var notifiedCount = 0;
+      vm.addListener(() => notifiedCount++);
+
+      // Store yüklenmeden önce statik katalog (21 ülke) kullanılır
+      expect(vm.displayedCountries.length, 21);
+
+      await store.ensureLoaded(lang: 'tr');
+      expect(notifiedCount, greaterThan(0));
+
+      // DB'den gelen 2 ülke (bölgeye atanmamış IT dahil) listelenmeli
+      expect(vm.displayedCountries.map((c) => c.code).toList(), ['TR', 'IT']);
+      expect(vm.countItemsForContinent(ContinentFilter.europe), 2);
+
+      // searchContinentsCatalog içinde Balkanlar yer almalı
+      final europe = vm.searchContinentsCatalog.firstWhere(
+        (c) => c.continent == ContinentFilter.europe,
+      );
+      final balkans = europe.regions.firstWhere((r) => r.id == 'balkans');
+      expect(balkans.name, 'Balkanlar');
+      expect(vm.countItemsForRegion(balkans), 1);
+
+      // Çoklu dil önerileri: "Balkans" -> "Balkanlar", "Rome" -> "Roma"
+      expect(
+        vm.buildSearchSuggestions('Balkans').any(
+              (s) =>
+                  s.type == RouteSearchSuggestionType.region &&
+                  s.title == 'Balkanlar',
+            ),
+        isTrue,
+      );
+      expect(
+        vm.buildSearchSuggestions('Rome').any(
+              (s) =>
+                  s.type == RouteSearchSuggestionType.city &&
+                  s.title == 'Roma',
+            ),
+        isTrue,
+      );
+
+      // Çoklu dil arama metni: "Rome" yazılınca İtalya -> Roma görünmeli
+      vm.updateSearchFilterQuery('Rome');
+      expect(vm.displayedCountries.map((c) => c.code).toList(), ['IT']);
+      expect(
+        vm
+            .getDisplayedCitiesForCountry(vm.displayedCountries.first)
+            .map((c) => c.name)
+            .toList(),
+        ['Roma'],
+      );
+
+      // Çoklu dil arama metni: "Balkans" yazılınca Balkanlar ülkesi (TR) görünmeli
+      vm.updateSearchFilterQuery('Balkans');
+      expect(vm.displayedCountries.map((c) => c.code).toList(), ['TR']);
+      vm.clearSearchFilter();
+
+      // Kelime hapı ile çoklu dil eşleşmesi ("Italia")
+      vm.applyFilterPills([
+        const RouteFeedFilterPill(
+          id: 'keyword:italia',
+          type: RouteFilterPillType.keyword,
+          label: '"Italia"',
+          keyword: 'Italia',
+        ),
+      ]);
+      expect(vm.displayedCountries.map((c) => c.code).toList(), ['IT']);
+      expect(
+        vm
+            .getDisplayedCitiesForCountry(vm.displayedCountries.first)
+            .map((c) => c.name)
+            .toList(),
+        ['Roma', 'Milano'],
+      );
+
+      vm.dispose();
+      store.dispose();
+    });
+  });
+
+  group('RouteBuilder - Adım 2: Tarih Aralığı Seçimi (4 Modlu Akış)', () {
+    final fixedToday = DateTime(2026, 11, 17);
+
+    GeographyStore buildHemisphereStore(List<Map<String, dynamic>> countries) {
+      final payload = <String, dynamic>{
+        'lang': 'tr',
+        'continents': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'cont-sa',
+            'code': 'SOUTH_AMERICA',
+            'name': 'Güney Amerika',
+            'default_name': 'Güney Amerika',
+            'name_translations': <String, String>{'tr': 'Güney Amerika'},
+            'image_url': '',
+            'places_count': 10,
+            'routes_count': 5,
+            'regions': <Map<String, dynamic>>[],
+            'countries': countries,
+          },
+        ],
+      };
+
+      final client = MockClient(
+        (_) async => http.Response.bytes(
+          utf8.encode(
+            jsonEncode(<String, dynamic>{'success': true, 'data': payload}),
+          ),
+          200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        ),
+      );
+      return GeographyStore(
+        apiService: GeographyApiService(
+          apiClient: BeenHereApiClient(
+            baseUrl: 'https://api.beenhere.test',
+            client: client,
+          ),
+        ),
+      );
+    }
+
+    tearDown(() {
+      BeenHereThemeController.instance.setDark();
+    });
+
+    testWidgets(
+      '2x2 Tarih Aralığı Seçimi ana ekranı ve modernize edilmiş Esnek Tarihler (hızlı dönem, mikro pill, temizleme) çalışır',
+      (WidgetTester tester) async {
+        final vm = RouteBuilderViewModel(clock: () => fixedToday);
+        final spain = RouteBuilderViewModel
+            .continentsCatalog.first.subRegions.first.countries.first;
+        vm.toggleCountrySelection(spain);
+        vm.goToStep(RouteWizardStep.dates);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: BeenHereTheme.darkTheme,
+            home: Scaffold(body: RouteBuilderScreen(viewModel: vm)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Ana Hub'da 4 kart görünür
+        expect(find.text('Tarih Aralığı Seçimi'), findsOneWidget);
+        expect(find.text('Esnek Tarihler'), findsOneWidget);
+        expect(find.text('Anlık Gezi'), findsOneWidget);
+        expect(find.text('Mevsimler'), findsOneWidget);
+        expect(find.text('Belirli Tarihler'), findsOneWidget);
+
+        // 2. Esnek Tarihler alt ekranına geç
+        await tester.tap(
+          find.byKey(const ValueKey<String>('date-mode-card-flexible')),
+        );
+        await tester.pumpAndSettle();
+
+        // Hızlı dönem kısayolları ve 12 ay seçeneğinin ilk/sonraki ayları görünür
+        expect(find.text('Tek Ay'), findsOneWidget);
+        expect(find.text('2 Aylık Dönem'), findsOneWidget);
+        expect(find.text('3 Aylık Dönem'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey<String>('flexible-month-2026-11')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('flexible-month-2027-1')),
+          findsOneWidget,
+        );
+
+        // Hızlı kısayol: "2 Aylık Dönem" -> Kasım 2026 - Aralık 2026 + Başlangıç / Bitiş mikro pill'leri
+        await tester.tap(
+          find.byKey(const ValueKey<String>('flexible-shortcut-2-months')),
+        );
+        await tester.pumpAndSettle();
+        expect(vm.formattedDateSummary, 'Kasım 2026 - Aralık 2026');
+        expect(find.text('Başlangıç'), findsOneWidget);
+        expect(find.text('Bitiş'), findsOneWidget);
+
+        // Temizle butonu ile esnek seçim sıfırlanır
+        await tester.tap(
+          find.byKey(const ValueKey<String>('flexible-clear-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(vm.flexibleStartMonth, isNull);
+        expect(vm.flexibleEndMonth, isNull);
+
+        // Kasım 2026 seç -> tek ay özeti + "Başlangıç" mikro pill'i
+        await tester.tap(
+          find.byKey(const ValueKey<String>('flexible-month-2026-11')),
+        );
+        await tester.pumpAndSettle();
+        expect(vm.formattedDateSummary, 'Kasım 2026');
+        expect(find.text('Kasım 2026'), findsOneWidget);
+        expect(find.text('Başlangıç'), findsOneWidget);
+        expect(find.text('Bütçe Seçimi (Kasım 2026)'), findsOneWidget);
+
+        // Ocak 2027 seç -> aralık oluşur, başlık ve alt bar güncellenir
+        await tester.tap(
+          find.byKey(const ValueKey<String>('flexible-month-2027-1')),
+        );
+        await tester.pumpAndSettle();
+        expect(vm.formattedDateSummary, 'Kasım 2026 - Ocak 2027');
+        expect(find.text('Kasım 2026 - Ocak 2027'), findsOneWidget);
+        expect(find.text('Başlangıç'), findsOneWidget);
+        expect(find.text('Bitiş'), findsOneWidget);
+        expect(
+          find.text('Bütçe Seçimi (Kasım 2026 - Ocak 2027)'),
+          findsOneWidget,
+        );
+
+        // Backend payload doğrulaması
+        final payload = vm.datePayload;
+        expect(payload.dateMode, 'FLEXIBLE');
+        expect(payload.flexiblePeriod, 'Kasım 2026 - Ocak 2027');
+        expect(payload.startDate, isNull);
+        expect(payload.endDate, isNull);
+
+        // Geri ok ile ana 2x2 hub'a dönülür ve özet pill'i görünür
+        await tester.tap(
+          find.byKey(const ValueKey<String>('date-subview-back-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Tarih Aralığı Seçimi'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey<String>('date-hub-active-summary')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'Anlık Gezi (CalendarDatePicker2): bugünü içermeyen aralıkta hata verir, bugünü kapsayan aralığı ve hızlı kısayolları kabul eder',
+      (WidgetTester tester) async {
+        final vm = RouteBuilderViewModel(clock: () => fixedToday);
+        final spain = RouteBuilderViewModel
+            .continentsCatalog.first.subRegions.first.countries.first;
+        vm.toggleCountrySelection(spain);
+        vm.goToStep(RouteWizardStep.dates);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: BeenHereTheme.darkTheme,
+            home: Scaffold(body: RouteBuilderScreen(viewModel: vm)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const ValueKey<String>('date-mode-card-instant')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Seçilen Tarih Aralığı'), findsOneWidget);
+        expect(find.byType(CalendarDatePicker2), findsOneWidget);
+        // Türkçe ay/yıl başlığı ve Pazartesi başlangıçlı Türkçe gün etiketleri
+        expect(find.text('Kasım'), findsOneWidget);
+        expect(find.text('2026'), findsOneWidget);
+        expect(find.text('Pzt'), findsOneWidget);
+        expect(find.text('Paz'), findsOneWidget);
+        expect(find.text('November'), findsNothing);
+
+        // 1. Bugünü (2026-11-17) kapsamayan tamamen gelecek aralık: 20 - 25 Kasım
+        final day20 = find.byKey(
+          const ValueKey<String>('calendar-day-2026-11-20'),
+        );
+        final day25 = find.byKey(
+          const ValueKey<String>('calendar-day-2026-11-25'),
+        );
+        await tester.ensureVisible(day20);
+        await tester.pumpAndSettle();
+        await tester.tap(day20);
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(day25);
+        await tester.pumpAndSettle();
+        await tester.tap(day25);
+        await tester.pumpAndSettle();
+
+        expect(
+          vm.instantTripValidationError,
+          'Anlık gezi için seçilen tarih aralığı bugünü kapsamalıdır.',
+        );
+        expect(
+          find.byKey(const ValueKey<String>('instant-trip-validation-error')),
+          findsOneWidget,
+        );
+        expect(vm.instantTripRange, isNull);
+
+        // 2. Bugünü kapsayan aralık: 15 Kasım - 20 Kasım (15 <= 17 <= 20)
+        final day15 = find.byKey(
+          const ValueKey<String>('calendar-day-2026-11-15'),
+        );
+        await tester.ensureVisible(day15);
+        await tester.pumpAndSettle();
+        await tester.tap(day15);
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(day20);
+        await tester.pumpAndSettle();
+        await tester.tap(day20);
+        await tester.pumpAndSettle();
+
+        expect(vm.instantTripValidationError, isNull);
+        expect(
+          find.byKey(const ValueKey<String>('instant-trip-validation-error')),
+          findsNothing,
+        );
+        expect(vm.instantTripRange, isNotNull);
+        expect(vm.instantTripRange!.start, DateTime(2026, 11, 15));
+        expect(vm.instantTripRange!.end, DateTime(2026, 11, 20));
+        expect(find.text('15 Kas 2026'), findsOneWidget);
+        expect(find.text('20 Kas 2026'), findsOneWidget);
+        expect(find.text('6 Gün'), findsOneWidget);
+        expect(vm.datePayload.dateMode, 'CURRENT_OR_PAST_TRIP');
+        expect(vm.datePayload.startDate, '2026-11-15');
+        expect(vm.datePayload.endDate, '2026-11-20');
+
+        // 3. Hızlı kısayollar: "Bugün" ve "Son 3 Gün"
+        final todayShortcut = find.byKey(
+          const ValueKey<String>('instant-shortcut-today'),
+        );
+        await tester.ensureVisible(todayShortcut);
+        await tester.pumpAndSettle();
+        await tester.tap(todayShortcut);
+        await tester.pumpAndSettle();
+        expect(vm.instantTripRange!.start, DateTime(2026, 11, 17));
+        expect(vm.instantTripRange!.end, DateTime(2026, 11, 17));
+        expect(find.text('1 Gün'), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const ValueKey<String>('instant-shortcut-last-3-days')),
+        );
+        await tester.pumpAndSettle();
+        expect(vm.instantTripRange!.start, DateTime(2026, 11, 15));
+        expect(vm.instantTripRange!.end, DateTime(2026, 11, 17));
+        expect(find.text('3 Gün'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'Mevsimler: ülkelere göre yarım küre otomatik algılanır, çoklu mevsim ve yıl geçişli aralıklar hesaplanır',
+      (WidgetTester tester) async {
+        // 1. Brezilya + Arjantin (GeographyStore üzerinden) -> Güney Yarım Küre
+        final southStore = buildHemisphereStore(<Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'br',
+            'code': 'BR',
+            'continent_code': 'SOUTH_AMERICA',
+            'hemisphere': 'SOUTHERN',
+            'name': 'Brezilya',
+            'default_name': 'Brezilya',
+            'name_translations': <String, String>{'tr': 'Brezilya'},
+            'flag_emoji': '🇧🇷',
+            'image_url': '',
+            'places_count': 1,
+            'routes_count': 1,
+            'cities': <Map<String, dynamic>>[],
+          },
+          <String, dynamic>{
+            'id': 'ar',
+            'code': 'AR',
+            'continent_code': 'SOUTH_AMERICA',
+            'hemisphere': 'SOUTHERN',
+            'name': 'Arjantin',
+            'default_name': 'Arjantin',
+            'name_translations': <String, String>{'tr': 'Arjantin'},
+            'flag_emoji': '🇦🇷',
+            'image_url': '',
+            'places_count': 1,
+            'routes_count': 1,
+            'cities': <Map<String, dynamic>>[],
+          },
+        ]);
+        await southStore.ensureLoaded(lang: 'tr');
+
+        final southVm = RouteBuilderViewModel(
+          geographyStore: southStore,
+          clock: () => fixedToday,
+        );
+        for (final country in southVm.displayedCountries) {
+          southVm.toggleCountrySelection(country);
+        }
+        expect(southVm.recommendedHemisphere, GeographyHemisphere.southern);
+        expect(southVm.selectedHemisphere, GeographyHemisphere.southern);
+        southVm.dispose();
+        southStore.dispose();
+
+        // 2. Türkiye + İtalya -> Kuzey Yarım Küre + UI widget akışı
+        final vm = RouteBuilderViewModel(clock: () => fixedToday);
+        final allCountries = RouteBuilderViewModel.continentsCatalog
+            .expand((c) => c.allCountries)
+            .toList(growable: false);
+        final turkey = allCountries.firstWhere((c) => c.code == 'TR');
+        final italy = allCountries.firstWhere((c) => c.code == 'IT');
+        vm.toggleCountrySelection(turkey);
+        vm.toggleCitySelection(italy.cities.first);
+        expect(vm.selectedHemisphere, GeographyHemisphere.northern);
+
+        vm.goToStep(RouteWizardStep.dates);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: BeenHereTheme.darkTheme,
+            home: Scaffold(body: RouteBuilderScreen(viewModel: vm)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const ValueKey<String>('date-mode-card-seasons')),
+        );
+        await tester.pumpAndSettle();
+
+        // Kış kartı Kasım 2026 itibarıyla Aralık 2026 - Şubat 2027 göstermeli
+        expect(find.text('Aralık 2026 - Şubat 2027'), findsOneWidget);
+
+        // Yaz ve İlkbahar çoklu seçimi
+        await tester.tap(
+          find.byKey(const ValueKey<String>('season-card-summer')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey<String>('season-card-spring')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(vm.formattedSelectedSeasonsTitle, 'Yaz ve İlkbahar');
+        expect(
+          vm.formattedSelectedSeasonRanges,
+          'Mart - Mayıs 2027 / Haziran - Ağustos 2027',
+        );
+        expect(find.text('Yaz ve İlkbahar'), findsOneWidget);
+        expect(
+          find.text('Mart - Mayıs 2027 / Haziran - Ağustos 2027'),
+          findsOneWidget,
+        );
+        expect(vm.datePayload.dateMode, 'SEASONS');
+        expect(vm.datePayload.flexiblePeriod!.length, lessThanOrEqualTo(120));
+        expect(vm.datePayload.dateRangeLabel.length, lessThanOrEqualTo(140));
+
+        // Güney Yarım Küre toggle'ına basınca aralıklar güncellenmeli
+        await tester.tap(
+          find.byKey(const ValueKey<String>('hemisphere-toggle-southern')),
+        );
+        await tester.pumpAndSettle();
+        expect(vm.selectedHemisphere, GeographyHemisphere.southern);
+        expect(
+          vm.formattedSelectedSeasonRanges,
+          'Eylül - Kasım 2026 / Aralık 2026 - Şubat 2027',
+        );
+      },
+    );
+
+    testWidgets(
+      'Belirli Tarihler (CalendarDatePicker2): geçmiş günler devre dışı, kısayollar ve gün seçimi özet kartları günceller',
+      (WidgetTester tester) async {
+        final vm = RouteBuilderViewModel(clock: () => fixedToday);
+        final spain = RouteBuilderViewModel
+            .continentsCatalog.first.subRegions.first.countries.first;
+        vm.toggleCountrySelection(spain);
+        vm.goToStep(RouteWizardStep.dates);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: BeenHereTheme.darkTheme,
+            home: Scaffold(body: RouteBuilderScreen(viewModel: vm)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const ValueKey<String>('date-mode-card-custom')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CalendarDatePicker2), findsOneWidget);
+        expect(find.text('Seçiniz'), findsNWidgets(2));
+
+        // Geçmiş gün (2026-11-10) tıklandığında seçilmemeli
+        final pastDay10 = find.byKey(
+          const ValueKey<String>('calendar-day-2026-11-10'),
+        );
+        await tester.ensureVisible(pastDay10);
+        await tester.pumpAndSettle();
+        await tester.tap(pastDay10);
+        await tester.pumpAndSettle();
+        expect(vm.specificDateRange, isNull);
+
+        // "1 Hafta" hızlı kısayoluna tıklandığında Başlangıç/Bitiş kapsülleri güncellenir
+        final oneWeekShortcut = find.byKey(
+          const ValueKey<String>('specific-shortcut-1-week'),
+        );
+        await tester.ensureVisible(oneWeekShortcut);
+        await tester.pumpAndSettle();
+        await tester.tap(oneWeekShortcut);
+        await tester.pumpAndSettle();
+
+        expect(vm.specificDateRange!.start, DateTime(2026, 11, 17));
+        expect(vm.specificDateRange!.end, DateTime(2026, 11, 23));
+        expect(find.text('17 Kas 2026'), findsOneWidget);
+        expect(find.text('23 Kas 2026'), findsOneWidget);
+        expect(find.text('7 Gün'), findsOneWidget);
+
+        // Temizle butonu seçimi sıfırlar
+        await tester.tap(
+          find.byKey(const ValueKey<String>('calendar-clear-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(vm.specificDateRange, isNull);
+
+        // Bugün (2026-11-17) ve ileri tarih (2026-11-22) gün tıklamalarıyla seçilebilmeli
+        final day17 = find.byKey(
+          const ValueKey<String>('calendar-day-2026-11-17'),
+        );
+        final day22 = find.byKey(
+          const ValueKey<String>('calendar-day-2026-11-22'),
+        );
+        await tester.ensureVisible(day17);
+        await tester.pumpAndSettle();
+        await tester.tap(day17);
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(day22);
+        await tester.pumpAndSettle();
+        await tester.tap(day22);
+        await tester.pumpAndSettle();
+
+        expect(vm.specificDateRange, isNotNull);
+        expect(vm.specificDateRange!.start, DateTime(2026, 11, 17));
+        expect(vm.specificDateRange!.end, DateTime(2026, 11, 22));
+        expect(find.text('17 Kas 2026'), findsOneWidget);
+        expect(find.text('22 Kas 2026'), findsOneWidget);
+        expect(find.text('6 Gün'), findsOneWidget);
+        expect(vm.datePayload.dateMode, 'CUSTOM_RANGE');
+        expect(vm.datePayload.startDate, '2026-11-17');
+        expect(vm.datePayload.endDate, '2026-11-22');
+
+        // Türkçe ay seçici modu açılır ve Türkçe kısaltmalar gösterir
+        await tester.tap(find.text('Kasım'));
+        await tester.pumpAndSettle();
+        expect(find.text('Oca'), findsOneWidget);
+        expect(find.text('Ara'), findsOneWidget);
+        await tester.tap(find.text('Ara'));
+        await tester.pumpAndSettle();
+        expect(find.text('Aralık'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'Dark ve Light temalarda 375px dar ekranda tüm tarih alt görünümleri taşma yapmaz',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(375, 812);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        for (final isLight in [false, true]) {
+          if (isLight) {
+            BeenHereThemeController.instance.setLight();
+          } else {
+            BeenHereThemeController.instance.setDark();
+          }
+
+          final vm = RouteBuilderViewModel(clock: () => fixedToday);
+          final spain = RouteBuilderViewModel
+              .continentsCatalog.first.subRegions.first.countries.first;
+          vm.toggleCountrySelection(spain);
+          vm.goToStep(RouteWizardStep.dates);
+
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: isLight
+                  ? BeenHereTheme.lightTheme
+                  : BeenHereTheme.darkTheme,
+              home: Scaffold(body: RouteBuilderScreen(viewModel: vm)),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+
+          for (final modeKey in [
+            'date-mode-card-flexible',
+            'date-mode-card-instant',
+            'date-mode-card-seasons',
+            'date-mode-card-custom',
+          ]) {
+            await tester.tap(find.byKey(ValueKey<String>(modeKey)));
+            await tester.pumpAndSettle();
+            expect(tester.takeException(), isNull);
+
+            await tester.tap(
+              find.byKey(const ValueKey<String>('date-subview-back-button')),
+            );
+            await tester.pumpAndSettle();
+            expect(tester.takeException(), isNull);
+          }
+
+          vm.dispose();
+        }
+      },
+    );
+  });
+
+  group('RouteBuilder - Dinamik Ülke & Şehir Görselleri ve Yer Tutucu Asset Testleri', () {
+    GeographyStore buildDynamicImageGeographyStore() {
+      final payload = <String, dynamic>{
+        'lang': 'tr',
+        'continents': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'cont-europe',
+            'code': 'EUROPE',
+            'name': 'Avrupa',
+            'default_name': 'Avrupa',
+            'name_translations': <String, String>{'tr': 'Avrupa'},
+            'image_url': '',
+            'places_count': 10,
+            'routes_count': 5,
+            'regions': <Map<String, dynamic>>[],
+            'countries': <Map<String, dynamic>>[
+              // 1. Ülke image_url boş, ilk şehirde Unsplash placeholder, ikinci şehirde gerçek URL var ->
+              // Ülke ikinci şehrin gerçek fotoğrafını almalı; ilk şehir skyline asset kullanmalı.
+              <String, dynamic>{
+                'id': 'country-tr',
+                'code': 'TR',
+                'continent_code': 'EUROPE',
+                'name': 'Türkiye',
+                'default_name': 'Türkiye',
+                'name_translations': <String, String>{'tr': 'Türkiye'},
+                'flag_emoji': '🇹🇷',
+                'image_url': '',
+                'places_count': 5,
+                'routes_count': 2,
+                'cities': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'id': 'city-ankara',
+                    'slug': 'tr:ankara',
+                    'country_code': 'TR',
+                    'name': 'Ankara',
+                    'default_name': 'Ankara',
+                    'name_translations': <String, String>{'tr': 'Ankara'},
+                    'image_url':
+                        'https://images.unsplash.com/photo-1569383746724-6f1b882b8f46?auto=format&fit=crop&w=600&q=80',
+                    'is_popular': true,
+                    'places_count': 2,
+                    'routes_count': 1,
+                  },
+                  <String, dynamic>{
+                    'id': 'city-izmir',
+                    'slug': 'tr:izmir',
+                    'country_code': 'TR',
+                    'name': 'İzmir',
+                    'default_name': 'İzmir',
+                    'name_translations': <String, String>{'tr': 'İzmir'},
+                    'image_url': 'https://cdn.beenhere.dev/geo/izmir-real.jpg',
+                    'is_popular': true,
+                    'places_count': 3,
+                    'routes_count': 1,
+                  },
+                  <String, dynamic>{
+                    'id': 'city-bursa',
+                    'slug': 'tr:bursa',
+                    'country_code': 'TR',
+                    'name': 'Bursa',
+                    'default_name': 'Bursa',
+                    'name_translations': <String, String>{'tr': 'Bursa'},
+                    'image_url': null,
+                    'is_popular': false,
+                    'places_count': 1,
+                    'routes_count': 0,
+                  },
+                ],
+              },
+              // 2. Hem ülke hem şehirleri fotoğrafsız -> her ikisi de yerel skyline asset kullanmalı.
+              <String, dynamic>{
+                'id': 'country-gr',
+                'code': 'GR',
+                'continent_code': 'EUROPE',
+                'name': 'Yunanistan',
+                'default_name': 'Yunanistan',
+                'name_translations': <String, String>{'tr': 'Yunanistan'},
+                'flag_emoji': '🇬🇷',
+                'image_url': null,
+                'places_count': 2,
+                'routes_count': 1,
+                'cities': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'id': 'city-athens',
+                    'slug': 'gr:athens',
+                    'country_code': 'GR',
+                    'name': 'Atina',
+                    'default_name': 'Atina',
+                    'name_translations': <String, String>{'tr': 'Atina'},
+                    'image_url': '',
+                    'is_popular': true,
+                    'places_count': 2,
+                    'routes_count': 1,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      final client = MockClient(
+        (_) async => http.Response.bytes(
+          utf8.encode(
+            jsonEncode(<String, dynamic>{'success': true, 'data': payload}),
+          ),
+          200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        ),
+      );
+      return GeographyStore(
+        apiService: GeographyApiService(
+          apiClient: BeenHereApiClient(
+            baseUrl: 'https://api.beenhere.test',
+            client: client,
+          ),
+        ),
+      );
+    }
+
+    String? extractNetworkImageUrl(Image imageWidget) {
+      final provider = imageWidget.image;
+      if (provider is NetworkImage) {
+        return provider.url;
+      }
+      if (provider is ResizeImage) {
+        final inner = provider.imageProvider;
+        if (inner is NetworkImage) {
+          return inner.url;
+        }
+      }
+      return null;
+    }
+
+    String? extractAssetImageName(Image imageWidget) {
+      final provider = imageWidget.image;
+      if (provider is AssetImage) {
+        return provider.assetName;
+      }
+      return null;
+    }
+
+    tearDown(() {
+      BeenHereThemeController.instance.setDark();
+    });
+
+    test(
+      'ViewModel: Statik fallback Unsplash URL içermez ve DB eşlemesi ülke/şehir görsellerini doğru çözer',
+      () async {
+        // 1. Çevrimdışı statik fallback ülkeleri ve şehirleri Unsplash URL'si taşımaz
+        for (final continent in RouteBuilderViewModel.continentsCatalog) {
+          for (final country in continent.allCountries) {
+            expect(country.imageUrl, isEmpty);
+            for (final city in country.cities) {
+              expect(city.imageUrl, isEmpty);
+            }
+          }
+        }
+
+        // 2. GeographyStore üzerinden gelen verilerde Unsplash temizlenir ve
+        // boş ülke fotoğrafı ilk fotoğraflı şehirden çekilir
+        final store = buildDynamicImageGeographyStore();
+        final vm = RouteBuilderViewModel(geographyStore: store);
+        await store.ensureLoaded(lang: 'tr');
+
+        final tr = vm.displayedCountries.firstWhere((c) => c.code == 'TR');
+        expect(tr.imageUrl, 'https://cdn.beenhere.dev/geo/izmir-real.jpg');
+        expect(
+          tr.cities.firstWhere((c) => c.name == 'Ankara').imageUrl,
+          isEmpty,
+        );
+        expect(
+          tr.cities.firstWhere((c) => c.name == 'İzmir').imageUrl,
+          'https://cdn.beenhere.dev/geo/izmir-real.jpg',
+        );
+        expect(
+          tr.cities.firstWhere((c) => c.name == 'Bursa').imageUrl,
+          isEmpty,
+        );
+
+        final gr = vm.displayedCountries.firstWhere((c) => c.code == 'GR');
+        expect(gr.imageUrl, isEmpty);
+        expect(
+          gr.cities.firstWhere((c) => c.name == 'Atina').imageUrl,
+          isEmpty,
+        );
+
+        vm.dispose();
+        store.dispose();
+      },
+    );
+
+    testWidgets(
+      'Fotoğraflı şehir/ülke Image.network, fotoğrafsız şehir/ülke skyline Image.asset kullanır (Dark & Light)',
+      (WidgetTester tester) async {
+        final store = buildDynamicImageGeographyStore();
+        await store.ensureLoaded(lang: 'tr');
+
+        for (final isLight in [false, true]) {
+          if (isLight) {
+            BeenHereThemeController.instance.setLight();
+          } else {
+            BeenHereThemeController.instance.setDark();
+          }
+
+          final vm = RouteBuilderViewModel(geographyStore: store);
+
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: isLight
+                  ? BeenHereTheme.lightTheme
+                  : BeenHereTheme.darkTheme,
+              home: Scaffold(body: RouteBuilderScreen(viewModel: vm)),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+
+          // 1. Fotoğrafı bulunan şehir ("İzmir") gerçek URL ile Image.network çizer
+          final izmirStack = find
+              .ancestor(
+                of: find.text('İzmir'),
+                matching: find.byType(Stack),
+              )
+              .first;
+          final izmirImage = tester.widget<Image>(
+            find
+                .descendant(of: izmirStack, matching: find.byType(Image))
+                .first,
+          );
+          expect(
+            extractNetworkImageUrl(izmirImage),
+            'https://cdn.beenhere.dev/geo/izmir-real.jpg',
+          );
+
+          // 2. Unsplash'tan temizlenen ("Ankara") ve null olan ("Bursa") şehir kartları
+          // Image.network açmadan doğrudan yerel skyline Image.asset kullanır
+          for (final emptyCityName in ['Ankara', 'Bursa']) {
+            final cityStack = find
+                .ancestor(
+                  of: find.text(emptyCityName),
+                  matching: find.byType(Stack),
+                )
+                .first;
+            final cityImage = tester.widget<Image>(
+              find
+                  .descendant(of: cityStack, matching: find.byType(Image))
+                  .first,
+            );
+            expect(extractNetworkImageUrl(cityImage), isNull);
+            expect(
+              extractAssetImageName(cityImage),
+              RouteBuilderViewModel.cityPlaceholderAsset,
+            );
+          }
+
+          // 3. Kendi image_url'i boş ama şehirlerinden birinde fotoğraf olan ülke ("Türkiye")
+          // arka planında o şehrin fotoğrafını (Image.network) kullanır
+          final turkeyBannerStack = find
+              .ancestor(
+                of: find.text('Türkiye'),
+                matching: find.byType(Stack),
+              )
+              .first;
+          final turkeyImage = tester.widget<Image>(
+            find
+                .descendant(
+                  of: turkeyBannerStack,
+                  matching: find.byType(Image),
+                )
+                .first,
+          );
+          expect(
+            extractNetworkImageUrl(turkeyImage),
+            'https://cdn.beenhere.dev/geo/izmir-real.jpg',
+          );
+
+          // 4. Hem ülkesi hem şehirleri fotoğrafsız olan ("Yunanistan" ve "Atina")
+          // yerel skyline Image.asset kullanır
+          final greeceBannerStack = find
+              .ancestor(
+                of: find.text('Yunanistan'),
+                matching: find.byType(Stack),
+              )
+              .first;
+          final greeceImage = tester.widget<Image>(
+            find
+                .descendant(
+                  of: greeceBannerStack,
+                  matching: find.byType(Image),
+                )
+                .first,
+          );
+          expect(extractNetworkImageUrl(greeceImage), isNull);
+          expect(
+            extractAssetImageName(greeceImage),
+            RouteBuilderViewModel.cityPlaceholderAsset,
+          );
+
+          final athensStack = find
+              .ancestor(
+                of: find.text('Atina'),
+                matching: find.byType(Stack),
+              )
+              .first;
+          final athensImage = tester.widget<Image>(
+            find
+                .descendant(of: athensStack, matching: find.byType(Image))
+                .first,
+          );
+          expect(extractNetworkImageUrl(athensImage), isNull);
+          expect(
+            extractAssetImageName(athensImage),
+            RouteBuilderViewModel.cityPlaceholderAsset,
+          );
+
+          vm.dispose();
+        }
+
+        store.dispose();
+      },
+    );
+  });
+
+  group('RouteBuilder - Adım 3: Çoklu Para Birimli Dinamik Bütçe Seçimi', () {
+    BuilderCountryCatalogItem findCatalogCountry(String code) {
+      for (final continent in RouteBuilderViewModel.continentsCatalog) {
+        for (final country in continent.allCountries) {
+          if (country.code == code) return country;
+        }
+      }
+      throw StateError('Country not found: $code');
+    }
+
+    test('ViewModel: Varsayılan 0-Sınırsız, ülke para birimi tekilleştirme, çift yönlü kur dönüşümü ve sınırsız üst tutar desteği', () async {
+      final viewModel = RouteBuilderViewModel();
+      addTearDown(viewModel.dispose);
+
+      // Varsayılan değerler: TRY birincil, USD ikincil, 0 – Sınırsız (ucu açık), eklenen döviz boş
+      expect(viewModel.isBudgetEnabled, isTrue);
+      expect(viewModel.userCurrencyCode, 'TRY');
+      expect(viewModel.secondaryCurrencyCode, 'USD');
+      expect(viewModel.minBudget, 0);
+      expect(viewModel.maxBudget, isNull);
+      expect(viewModel.isMaxBudgetOpenEnded, isTrue);
+      expect(viewModel.addedCountryCurrencies, isEmpty);
+      expect(viewModel.formattedBudgetSummary, '₺0 – Sınırsız');
+
+      final defaultUsdRange = viewModel.budgetAmountForCurrency('USD');
+      expect(defaultUsdRange.min, 0);
+      expect(defaultUsdRange.max, isNull);
+
+      // Ucu açık modda sadece Min artırılınca üst sınır ucu açık (null) kalmaya devam eder
+      viewModel.updateBudgetRangeForCurrency(
+        currencyCode: 'TRY',
+        minAmount: 15000,
+      );
+      expect(viewModel.minBudget, 15000);
+      expect(viewModel.maxBudget, isNull);
+      expect(viewModel.isMaxBudgetOpenEnded, isTrue);
+      expect(viewModel.formattedBudgetSummary, r'₺15.000+ ($435+)');
+
+      // İspanya (ES) + Fransa (FR) + Tayland (TH) + Türkiye (TR) seçelim
+      final es = findCatalogCountry('ES');
+      final fr = findCatalogCountry('FR');
+      final th = findCatalogCountry('TH');
+      final tr = findCatalogCountry('TR');
+
+      expect(es.currencyCode, 'EUR');
+      expect(es.currencySymbol, '€');
+      expect(th.currencyCode, 'THB');
+      expect(th.currencySymbol, '฿');
+
+      viewModel.toggleCountrySelection(tr);
+      viewModel.toggleCountrySelection(es);
+      viewModel.toggleCountrySelection(fr);
+      viewModel.toggleCountrySelection(th);
+
+      // TRY hariç ve ES+FR tek EUR altında birleşmiş olmalı
+      final available = viewModel.availableSelectedCountryCurrencies;
+      expect(available.map((e) => e.code).toList(), ['EUR', 'THB']);
+      final eurOption = available.firstWhere((e) => e.code == 'EUR');
+      expect(eurOption.symbol, '€');
+      expect(eurOption.countryNames, ['İspanya', 'Fransa']);
+      expect(eurOption.flagEmojis, ['🇪🇸', '🇫🇷']);
+
+      // Varsayılan olarak eklenen ülke para birimleri yine boştur
+      expect(viewModel.addedCountryCurrencies, isEmpty);
+
+      // THB ekle -> listede görünür; clearAllDestinationSelections() eklenen dövizleri de sıfırlar
+      viewModel.addCountryCurrency('THB');
+      expect(viewModel.addedCountryCurrencies.map((e) => e.code), ['THB']);
+
+      // USD üzerinden somut aralık güncelleme: $1000 min, $2000 max -> TRY ve THB canlı güncellenir
+      viewModel.updateBudgetRangeForCurrency(
+        currencyCode: 'USD',
+        minAmount: 1000,
+        maxAmount: 2000,
+      );
+      expect(viewModel.minBudget, closeTo(34500, 0.01));
+      expect(viewModel.maxBudget, closeTo(69000, 0.01));
+      expect(viewModel.isMaxBudgetOpenEnded, isFalse);
+      expect(
+        viewModel.formattedBudgetSummary,
+        r'₺34.500 – ₺69.000 ($1.000 – $2.000)',
+      );
+      final thbRange = viewModel.budgetAmountForCurrency('THB');
+      expect(thbRange.min, closeTo(34800, 0.1));
+      expect(thbRange.max, closeTo(69600, 0.1));
+
+      // Yüksek manuel tutar: 250.000 TRY -> üst sınır engeli olmadan kabul edilir ve dövizlere çevrilir
+      viewModel.updateBudgetRangeForCurrency(
+        currencyCode: 'TRY',
+        maxAmount: 250000,
+      );
+      expect(viewModel.maxBudget, 250000);
+      expect(viewModel.budgetAmountForCurrency('USD').max, closeTo(7246.38, 0.1));
+      expect(viewModel.budgetAmountForCurrency('THB').max, closeTo(252173.91, 0.1));
+
+      // Somut üst sınır varken min > max dengelenmesi
+      viewModel.updateBudgetRangeForCurrency(
+        currencyCode: 'TRY',
+        minAmount: 320000,
+      );
+      expect(viewModel.minBudget, 320000);
+      expect(viewModel.maxBudget, 320000);
+
+      // clearMaxAmount: true ile tekrar ucu açık (Sınırsız) moda dönüş
+      viewModel.updateBudgetRangeForCurrency(
+        currencyCode: 'TRY',
+        minAmount: 0,
+        clearMaxAmount: true,
+      );
+      expect(viewModel.minBudget, 0);
+      expect(viewModel.maxBudget, isNull);
+      expect(viewModel.isMaxBudgetOpenEnded, isTrue);
+      expect(viewModel.formattedBudgetSummary, '₺0 – Sınırsız');
+
+      // Farklı kullanıcı para birimlerinde 0 – Sınırsız korunur ve yüksek manuel tutar (örn. 1.500.000 ¥) engel olmadan kabul edilir
+      viewModel.setUserCurrencyCode('USD');
+      expect(viewModel.minBudget, 0);
+      expect(viewModel.maxBudget, isNull);
+      expect(viewModel.formattedBudgetSummary, r'$0 – Sınırsız');
+
+      viewModel.setUserCurrencyCode('EUR');
+      expect(viewModel.minBudget, 0);
+      expect(viewModel.maxBudget, isNull);
+      expect(viewModel.formattedBudgetSummary, '€0 – Sınırsız');
+
+      viewModel.setUserCurrencyCode('JPY');
+      viewModel.updateBudgetRangeForCurrency(
+        currencyCode: 'JPY',
+        maxAmount: 1500000,
+      );
+      expect(viewModel.maxBudget, 1500000);
+      expect(viewModel.formattedBudgetSummary, contains('¥1.500.000'));
+
+      // TRY'ye geri dön ve kur özeti formatlarını kontrol et
+      viewModel.setUserCurrencyCode('TRY');
+      expect(viewModel.exchangeRateSummary('USD', 'TRY'), contains('≈'));
+      expect(viewModel.exchangeRateSummary('TRY', 'THB'), contains('₺'));
+
+      // Bütçe kapatılınca alt bar etiketi güncellenir
+      viewModel.setBudgetEnabled(false);
+      expect(viewModel.formattedBudgetSummary, 'Bütçe Sınırı Yok');
+
+      // Tüm konum seçimleri temizlenince eklenen para birimleri de temizlenir
+      viewModel.clearAllDestinationSelections();
+      expect(viewModel.addedCountryCurrencies, isEmpty);
+    });
+
+    test('ViewModel: GeographyStore DB kurları ve ülke para birimi alanları aktarılır', () async {
+      final mockClient = MockClient((request) async {
+        final payload = <String, dynamic>{
+          'version': 1,
+          'lang': 'tr',
+          'exchange_rates': [
+            {
+              'code': 'USD',
+              'symbol': r'$',
+              'name_tr': 'ABD Doları',
+              'rate_per_usd': 1.0,
+            },
+            {
+              'code': 'TRY',
+              'symbol': '₺',
+              'name_tr': 'Türk Lirası',
+              'rate_per_usd': 40.0,
+            },
+            {
+              'code': 'THB',
+              'symbol': '฿',
+              'name_tr': 'Tayland Bahtı',
+              'rate_per_usd': 36.0,
+            },
+          ],
+          'continents': [
+            {
+              'id': 'c-asia',
+              'code': 'ASIA',
+              'name': 'Asya',
+              'default_name': 'Asia',
+              'name_translations': {'tr': 'Asya'},
+              'image_url': '',
+              'regions': [],
+              'countries': [
+                {
+                  'id': 'country-th',
+                  'code': 'TH',
+                  'continent_code': 'ASIA',
+                  'name': 'Tayland',
+                  'default_name': 'Thailand',
+                  'name_translations': {'tr': 'Tayland'},
+                  'aliases': [],
+                  'flag_emoji': '🇹🇭',
+                  'image_url': '',
+                  'places_count': 10,
+                  'routes_count': 2,
+                  'currency_code': 'THB',
+                  'currency_symbol': '฿',
+                  'currency_name_tr': 'Tayland Bahtı',
+                  'cities': [],
+                },
+              ],
+            },
+          ],
+        };
+        return http.Response.bytes(
+          utf8.encode(
+            jsonEncode(<String, dynamic>{'success': true, 'data': payload}),
+          ),
+          200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        );
+      });
+
+      final store = GeographyStore(
+        apiService: GeographyApiService(
+          apiClient: BeenHereApiClient(
+            baseUrl: 'https://api.beenhere.test',
+            client: mockClient,
+          ),
+        ),
+      );
+      await store.ensureLoaded(lang: 'tr');
+
+      final vm = RouteBuilderViewModel(geographyStore: store);
+      addTearDown(() {
+        vm.dispose();
+        store.dispose();
+      });
+
+      final th = vm.displayedCountries.firstWhere((c) => c.code == 'TH');
+      expect(th.currencyCode, 'THB');
+      expect(th.currencySymbol, '฿');
+      expect(th.currencyNameTr, 'Tayland Bahtı');
+
+      // DB kuru (1 USD = 40 TRY) ile dönüşüm doğrulanır
+      vm.updateBudgetRangeForCurrency(
+        currencyCode: 'USD',
+        minAmount: 100,
+        maxAmount: 200,
+      );
+      expect(vm.minBudget, closeTo(4000, 0.01));
+      expect(vm.maxBudget, closeTo(8000, 0.01));
+    });
+
+    testWidgets(
+      'Widget: TRY ve USD varsayılan görünür, ülke dövizleri gizli başlar, modal ile eklenir ve çift yönlü senkron çalışır',
+      (WidgetTester tester) async {
+        final viewModel = RouteBuilderViewModel();
+        addTearDown(viewModel.dispose);
+
+        // Tayland + İspanya + Fransa seçili iken Bütçe adımına geçelim
+        viewModel.toggleCountrySelection(findCatalogCountry('TH'));
+        viewModel.toggleCountrySelection(findCatalogCountry('ES'));
+        viewModel.toggleCountrySelection(findCatalogCountry('FR'));
+        viewModel.goToStep(RouteWizardStep.budget);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RouteBuilderScreen(viewModel: viewModel),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        Future<void> scrollBudgetTo(Finder target) async {
+          final scrollable = find
+              .descendant(
+                of: find.byKey(const ValueKey<String>('wizard-step-budget')),
+                matching: find.byType(Scrollable),
+              )
+              .first;
+          await tester.scrollUntilVisible(
+            target,
+            180,
+            scrollable: scrollable,
+          );
+          await tester.pumpAndSettle();
+        }
+
+        // 1. Ayrı üst "Bütçe" başlığı yok; "Bütçe Yok" hapı kartın sağ üst köşesine entegre,
+        // bütünleşik kartta TRY ve USD görünür, THB/EUR GİZLİ başlar
+        final unifiedCardFinder = find.byKey(
+          const ValueKey<String>('budget-unified-card'),
+        );
+        final noLimitPillFinder = find.byKey(
+          const ValueKey<String>('budget-no-limit-pill'),
+        );
+        expect(find.text('Bütçe'), findsNothing);
+        expect(find.text('Bütçe Yok'), findsOneWidget);
+        expect(find.byType(Switch), findsNothing);
+        expect(find.text('Varsayılan Para Birimin'), findsNothing);
+        expect(find.text('Küresel Karşılık'), findsNothing);
+        expect(unifiedCardFinder, findsOneWidget);
+        expect(
+          find.descendant(
+            of: unifiedCardFinder,
+            matching: noLimitPillFinder,
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('budget-card-TRY')),
+            matching: noLimitPillFinder,
+          ),
+          findsOneWidget,
+        );
+        final enabledCardRect = tester.getRect(unifiedCardFinder);
+        final enabledPillRect = tester.getRect(noLimitPillFinder);
+        expect(
+          enabledPillRect.center.dx,
+          greaterThan(enabledCardRect.center.dx),
+        );
+        expect(enabledPillRect.top - enabledCardRect.top, lessThan(24));
+        expect(find.byKey(const ValueKey<String>('budget-card-TRY')), findsOneWidget);
+        expect(find.byKey(const ValueKey<String>('budget-card-USD')), findsOneWidget);
+        expect(find.byKey(const ValueKey<String>('budget-card-THB')), findsNothing);
+        expect(find.byKey(const ValueKey<String>('budget-card-EUR')), findsNothing);
+        expect(find.text('Ekonomik'), findsNothing);
+        expect(find.text('Orta'), findsNothing);
+        expect(find.text('Konforlu'), findsNothing);
+        expect(find.text('Lüks'), findsNothing);
+
+        // Varsayılan 0 – Sınırsız (ucu açık) UI doğrulaması ve RangeSlider olmaması:
+        // TRY ve USD Min=0, Maks boş (hint: 'Sınırsız'), ekranda RangeSlider ve uç etiketleri bulunmaz
+        expect(find.byType(RangeSlider), findsNothing);
+        expect(
+          find.byKey(const ValueKey<String>('budget-range-slider')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('budget-slider-min-label')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('budget-slider-max-label')),
+          findsNothing,
+        );
+
+        final initialTryMin = tester.widget<TextField>(
+          find.byKey(const ValueKey<String>('budget-input-TRY-min')),
+        );
+        final initialTryMax = tester.widget<TextField>(
+          find.byKey(const ValueKey<String>('budget-input-TRY-max')),
+        );
+        final initialUsdMax = tester.widget<TextField>(
+          find.byKey(const ValueKey<String>('budget-input-USD-max')),
+        );
+        expect(initialTryMin.controller?.text, '0');
+        expect(initialTryMax.controller?.text, isEmpty);
+        expect(initialTryMax.decoration?.hintText, 'Sınırsız');
+        expect(initialUsdMax.controller?.text, isEmpty);
+        expect(initialUsdMax.decoration?.hintText, 'Sınırsız');
+        expect(find.text('Ziyaretçi Seçimi (₺0 – Sınırsız)'), findsOneWidget);
+
+        // TRY Maks kutusuna somut değer girilince USD Maks canlı güncellenir, silinince tekrar Sınırsız olur
+        final initialTryMaxFinder = find.byKey(
+          const ValueKey<String>('budget-input-TRY-max'),
+        );
+        await tester.enterText(initialTryMaxFinder, '50000');
+        await tester.pumpAndSettle();
+        expect(viewModel.isMaxBudgetOpenEnded, isFalse);
+        expect(viewModel.maxBudget, 50000);
+        expect(
+          tester.widget<TextField>(
+            find.byKey(const ValueKey<String>('budget-input-USD-max')),
+          ).controller?.text,
+          '1.449',
+        );
+
+        await tester.enterText(initialTryMaxFinder, '');
+        await tester.pumpAndSettle();
+        expect(viewModel.isMaxBudgetOpenEnded, isTrue);
+        expect(viewModel.maxBudget, isNull);
+        expect(
+          tester.widget<TextField>(
+            find.byKey(const ValueKey<String>('budget-input-TRY-max')),
+          ).controller?.text,
+          isEmpty,
+        );
+        expect(
+          tester.widget<TextField>(
+            find.byKey(const ValueKey<String>('budget-input-USD-max')),
+          ).controller?.text,
+          isEmpty,
+        );
+
+        await scrollBudgetTo(find.text('+ Ülke Para Birimi Ekle'));
+        expect(find.text('+ Ülke Para Birimi Ekle'), findsOneWidget);
+
+        // 2. "+ Ülke Para Birimi Ekle" butonuna bas -> seçili ülkelerin dövizleri listelenir (THB & tekil EUR)
+        await tester.tap(
+          find.byKey(const ValueKey<String>('budget-add-currency-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey<String>('budget-currency-picker-sheet')),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Tayland Bahtı (THB ฿)'), findsOneWidget);
+        expect(find.textContaining('Euro (EUR €)'), findsOneWidget);
+        expect(find.textContaining('İspanya, Fransa'), findsOneWidget);
+
+        // 3. Tayland Bahtı (THB) seçeneğini ekle -> sheet kapanır ve THB kartı açılır
+        await tester.tap(
+          find.byKey(const ValueKey<String>('budget-currency-option-THB')),
+        );
+        await tester.pumpAndSettle();
+
+        await scrollBudgetTo(find.byKey(const ValueKey<String>('budget-card-THB')));
+        expect(find.byKey(const ValueKey<String>('budget-card-THB')), findsOneWidget);
+
+        // 4. Çift yönlü dinamik dönüşüm (ucu açıkken Min girilince Maks ucu açık kalır):
+        // THB Minimum kutusuna 20000 gir -> TRY ve USD Min kutuları canlı güncellenir, Maks Sınırsız kalır
+        final thbMinFinder = find.byKey(
+          const ValueKey<String>('budget-input-THB-min'),
+        );
+        await scrollBudgetTo(thbMinFinder);
+        await tester.enterText(thbMinFinder, '20000');
+        await tester.pumpAndSettle();
+
+        expect(viewModel.isMaxBudgetOpenEnded, isTrue);
+        await scrollBudgetTo(find.byKey(const ValueKey<String>('budget-input-TRY-min')));
+        final tryMinField = tester.widget<TextField>(
+          find.byKey(const ValueKey<String>('budget-input-TRY-min')),
+        );
+        expect(tryMinField.controller?.text, '19.828');
+
+        await scrollBudgetTo(find.byKey(const ValueKey<String>('budget-input-USD-min')));
+        final usdMinField = tester.widget<TextField>(
+          find.byKey(const ValueKey<String>('budget-input-USD-min')),
+        );
+        expect(usdMinField.controller?.text, '575');
+
+        // USD Maksimum kutusuna 2000 gir -> TRY ve THB Maks kutuları canlı güncellenir
+        final usdMaxFinder = find.byKey(
+          const ValueKey<String>('budget-input-USD-max'),
+        );
+        await scrollBudgetTo(usdMaxFinder);
+        await tester.enterText(usdMaxFinder, '2000');
+        await tester.pumpAndSettle();
+
+        await scrollBudgetTo(find.byKey(const ValueKey<String>('budget-input-TRY-max')));
+        final tryMaxField = tester.widget<TextField>(
+          find.byKey(const ValueKey<String>('budget-input-TRY-max')),
+        );
+        expect(tryMaxField.controller?.text, '69.000');
+
+        await scrollBudgetTo(find.byKey(const ValueKey<String>('budget-input-THB-max')));
+        final thbMaxField = tester.widget<TextField>(
+          find.byKey(const ValueKey<String>('budget-input-THB-max')),
+        );
+        expect(thbMaxField.controller?.text, '69.600');
+
+        // Yüksek tutar (250000 TRY) elle girildiğinde üst sınır engeli olmadan USD ve THB güncellenir
+        final tryMaxFinder = find.byKey(
+          const ValueKey<String>('budget-input-TRY-max'),
+        );
+        await scrollBudgetTo(tryMaxFinder);
+        await tester.enterText(tryMaxFinder, '250000');
+        await tester.pumpAndSettle();
+        expect(viewModel.maxBudget, 250000);
+        expect(
+          tester.widget<TextField>(
+            find.byKey(const ValueKey<String>('budget-input-USD-max')),
+          ).controller?.text,
+          '7.246',
+        );
+        await scrollBudgetTo(find.byKey(const ValueKey<String>('budget-input-THB-max')));
+        expect(
+          tester.widget<TextField>(
+            find.byKey(const ValueKey<String>('budget-input-THB-max')),
+          ).controller?.text,
+          '252.174',
+        );
+
+        // Maks kutusu boşaltıldığında tüm para birimleri tekrar Sınırsız (ucu açık) moda döner
+        await scrollBudgetTo(tryMaxFinder);
+        await tester.enterText(tryMaxFinder, '');
+        await tester.pumpAndSettle();
+        expect(viewModel.isMaxBudgetOpenEnded, isTrue);
+        expect(viewModel.maxBudget, isNull);
+        expect(
+          tester.widget<TextField>(
+            find.byKey(const ValueKey<String>('budget-input-USD-max')),
+          ).controller?.text,
+          isEmpty,
+        );
+        await scrollBudgetTo(find.byKey(const ValueKey<String>('budget-input-THB-max')));
+        expect(
+          tester.widget<TextField>(
+            find.byKey(const ValueKey<String>('budget-input-THB-max')),
+          ).controller?.text,
+          isEmpty,
+        );
+
+        // TRY Minimum kutusuna 25000 gir -> USD ve THB Min kutuları canlı güncellenir
+        final tryMinFinder = find.byKey(
+          const ValueKey<String>('budget-input-TRY-min'),
+        );
+        await scrollBudgetTo(tryMinFinder);
+        await tester.enterText(tryMinFinder, '25000');
+        await tester.pumpAndSettle();
+
+        await scrollBudgetTo(find.byKey(const ValueKey<String>('budget-input-USD-min')));
+        final usdMinAfterTry = tester.widget<TextField>(
+          find.byKey(const ValueKey<String>('budget-input-USD-min')),
+        );
+        expect(usdMinAfterTry.controller?.text, '725');
+
+        await scrollBudgetTo(find.byKey(const ValueKey<String>('budget-input-THB-min')));
+        final thbMinAfterTry = tester.widget<TextField>(
+          find.byKey(const ValueKey<String>('budget-input-THB-min')),
+        );
+        expect(thbMinAfterTry.controller?.text, '25.217');
+
+        // Min kutusu boşaltıldığında 0 olur
+        await scrollBudgetTo(tryMinFinder);
+        await tester.enterText(tryMinFinder, '');
+        await tester.pumpAndSettle();
+        expect(viewModel.minBudget, 0);
+        expect(viewModel.formattedBudgetSummary, '₺0 – Sınırsız');
+
+        // 5. THB kartını X butonuyla kaldır -> kart kaybolur
+        final removeThbFinder = find.byKey(
+          const ValueKey<String>('budget-remove-currency-THB'),
+        );
+        await scrollBudgetTo(removeThbFinder);
+        await tester.tap(removeThbFinder);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey<String>('budget-card-THB')), findsNothing);
+
+        // 6. Kartın sağ üst köşesindeki "Bütçe Yok" hapı -> bütçeyi kapatır,
+        // kapalı kartın aynı sağ üst köşesinde aktif "Bütçe Yok ✓" gösterir (ekstra ikinci buton yok)
+        await tester.drag(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('wizard-step-budget')),
+            matching: find.byType(ListView),
+          ).first,
+          const Offset(0, 600),
+        );
+        await tester.pumpAndSettle();
+        final pillRectBeforeDisable = tester.getRect(noLimitPillFinder);
+        await tester.tap(noLimitPillFinder);
+        await tester.pumpAndSettle();
+
+        final disabledCardFinder = find.byKey(
+          const ValueKey<String>('budget-disabled-state-card'),
+        );
+        expect(viewModel.isBudgetEnabled, isFalse);
+        expect(unifiedCardFinder, findsNothing);
+        expect(disabledCardFinder, findsOneWidget);
+        expect(find.text('Bütçe sınırı belirtilmedi'), findsOneWidget);
+        expect(find.text('Bütçe Yok ✓'), findsOneWidget);
+        expect(find.text('Bütçe Belirle'), findsNothing);
+        expect(
+          find.byKey(const ValueKey<String>('budget-enable-cta-button')),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: disabledCardFinder,
+            matching: noLimitPillFinder,
+          ),
+          findsOneWidget,
+        );
+        final disabledCardRect = tester.getRect(disabledCardFinder);
+        final disabledPillRect = tester.getRect(noLimitPillFinder);
+        expect(
+          disabledPillRect.center.dx,
+          greaterThan(disabledCardRect.center.dx),
+        );
+        expect(
+          disabledPillRect.top,
+          closeTo(pillRectBeforeDisable.top, 1.0),
+        );
+        expect(
+          disabledPillRect.right,
+          closeTo(pillRectBeforeDisable.right, 1.0),
+        );
+        expect(
+          find.text('Ziyaretçi Seçimi (Bütçe Sınırı Yok)'),
+          findsOneWidget,
+        );
+
+        // Aynı sağ üst köşedeki "Bütçe Yok ✓" hapına tekrar dokunulunca bütçe yeniden açılır
+        await tester.tap(noLimitPillFinder);
+        await tester.pumpAndSettle();
+        expect(viewModel.isBudgetEnabled, isTrue);
+        expect(disabledCardFinder, findsNothing);
+        expect(unifiedCardFinder, findsOneWidget);
+        expect(find.text('Bütçe Yok'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: unifiedCardFinder,
+            matching: noLimitPillFinder,
+          ),
+          findsOneWidget,
+        );
+
+        // Tekrar kapatıp 4. adıma geçilebildiğini doğrula
+        await tester.tap(noLimitPillFinder);
+        await tester.pumpAndSettle();
+        expect(viewModel.isBudgetEnabled, isFalse);
+
+        // Kapalıyken bile İleri butonu ile 4. adıma geçilebilmeli
+        await tester.tap(find.text('Ziyaretçi Seçimi (Bütçe Sınırı Yok)'));
+        await tester.pumpAndSettle();
+        expect(viewModel.currentStep, RouteWizardStep.travelers);
+      },
+    );
+
+    testWidgets(
+      'Widget: Dark ve Light temada 375px dar ekranda bütçe adımı ve modal sıfır overflow verir',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(375, 667);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+          BeenHereThemeController.instance.setDark();
+        });
+
+        for (final isDark in [true, false]) {
+          if (isDark) {
+            BeenHereThemeController.instance.setDark();
+          } else {
+            BeenHereThemeController.instance.setLight();
+          }
+
+          final viewModel = RouteBuilderViewModel();
+          // Yalnızca Türkiye (TRY) seçiliyken modal mesajını ve eklenen döviz kartını test edelim
+          viewModel.toggleCountrySelection(findCatalogCountry('TR'));
+          viewModel.addCountryCurrency('EUR');
+          viewModel.goToStep(RouteWizardStep.budget);
+
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: isDark
+                  ? BeenHereTheme.darkTheme
+                  : BeenHereTheme.lightTheme,
+              home: Scaffold(
+                body: RouteBuilderScreen(viewModel: viewModel),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final scrollable = find
+              .descendant(
+                of: find.byKey(const ValueKey<String>('wizard-step-budget')),
+                matching: find.byType(Scrollable),
+              )
+              .first;
+
+          expect(tester.takeException(), isNull);
+          expect(find.byType(RangeSlider), findsNothing);
+          expect(find.byKey(const ValueKey<String>('budget-card-TRY')), findsOneWidget);
+
+          // Dar ekranda sağ üst köşedeki Bütçe Yok toggle geçişi de sıfır overflow vermeli
+          final narrowNoLimitPill = find.byKey(
+            const ValueKey<String>('budget-no-limit-pill'),
+          );
+          await tester.tap(narrowNoLimitPill);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          expect(
+            find.byKey(const ValueKey<String>('budget-disabled-state-card')),
+            findsOneWidget,
+          );
+          await tester.tap(narrowNoLimitPill);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          expect(
+            find.byKey(const ValueKey<String>('budget-unified-card')),
+            findsOneWidget,
+          );
+          await tester.scrollUntilVisible(
+            find.byKey(const ValueKey<String>('budget-card-USD')),
+            180,
+            scrollable: scrollable,
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          expect(find.byKey(const ValueKey<String>('budget-card-USD')), findsOneWidget);
+
+          await tester.scrollUntilVisible(
+            find.byKey(const ValueKey<String>('budget-card-EUR')),
+            180,
+            scrollable: scrollable,
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          expect(find.byKey(const ValueKey<String>('budget-card-EUR')), findsOneWidget);
+
+          // Modal açılıp TRY/USD bilgilendirme + popüler para birimleri dar ekranda taşma yapmamalı
+          await tester.scrollUntilVisible(
+            find.byKey(const ValueKey<String>('budget-add-currency-button')),
+            180,
+            scrollable: scrollable,
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const ValueKey<String>('budget-add-currency-button')),
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          expect(
+            find.textContaining('zaten TRY / USD kullanıyor'),
+            findsOneWidget,
+          );
+
+          Navigator.of(
+            tester.element(
+              find.byKey(const ValueKey<String>('budget-currency-picker-sheet')),
+            ),
+          ).pop();
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+
+          viewModel.dispose();
+        }
       },
     );
   });

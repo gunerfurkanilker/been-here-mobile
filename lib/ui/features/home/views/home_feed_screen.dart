@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/been_here_theme.dart';
 import '../../../core/widgets/geography_tree_filter_bar.dart';
 import '../view_models/home_feed_view_model.dart';
-import 'fullscreen_swipe_route_card.dart';
 import 'route_detail_screen.dart';
+import 'showcase_route_feed_card.dart';
 
 class HomeFeedScreen extends StatefulWidget {
   const HomeFeedScreen({
@@ -298,8 +298,8 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
                               children: [
                                 // Sabit yüksekliğe sahip rota kartı (Asla sıkışmaz, alttaki kart hemen peşinden gelir)
                                 SizedBox(
-                                  height: 510,
-                                  child: FullscreenSwipeRouteCard(
+                                  height: 452,
+                                  child: ShowcaseRouteFeedCard(
                                     route: route,
                                     onTapCard: () {
                                       Navigator.of(context).push(

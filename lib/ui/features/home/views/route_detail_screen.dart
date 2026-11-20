@@ -7,7 +7,7 @@ import '../view_models/home_feed_view_model.dart';
 /// Instagram / Airbnb Tarzı Hero Animasyonlu Tam Ekran Rota Detay Ekranı.
 /// - Üstte sağa-sola kaydırılabilir temiz fotoğraf slider'ı (indikatörlerin üzerinde başlık karmaşası yok)
 /// - Aşağı doğru kaydırıldığında devreye giren "Liquid Glass" (Frosted Glass / BackdropFilter blur) üst bar
-/// - Sayfa içinde sonsuz döngülü (Infinite Scroll) ve bir sonraki mekanı uçtan gösteren
+/// - Sayfa içinde sonlu kaydırmalı ve bir sonraki mekanı uçtan gösteren
 ///   Mekan / Durak kartları slider'ı (`PageView` + `viewportFraction: 0.86`)
 class RouteDetailScreen extends StatefulWidget {
   const RouteDetailScreen({
@@ -35,8 +35,6 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
   final Set<String> _savedStopIds = {};
   final Set<String> _addedStopIds = {};
 
-  static const int _kStopLoopFactor = 1000;
-
   ScrollController get scrollController {
     return _scrollController ??=
         (ScrollController()..addListener(_onScroll));
@@ -44,10 +42,8 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
 
   PageController get stopsPageController {
     return _stopsPageController ??= PageController(
-      viewportFraction: 0.86,
-      initialPage: widget.route.stops.isNotEmpty
-          ? widget.route.stops.length * (_kStopLoopFactor ~/ 2)
-          : 0,
+      viewportFraction: widget.route.stops.length > 1 ? 0.86 : 1.0,
+      initialPage: 0,
     );
   }
 
@@ -57,6 +53,32 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
     // Güvenli başlatma: hem initState hem de Hot Reload anında lazy getter ile çalışır
     final _ = stopsPageController;
     final _ = scrollController;
+  }
+
+  @override
+  void didUpdateWidget(covariant RouteDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldHasMultiple = oldWidget.route.stops.length > 1;
+    final newHasMultiple = widget.route.stops.length > 1;
+    if (oldWidget.route.id != widget.route.id) {
+      _activeStopIndex = 0;
+      _stopsPageController?.dispose();
+      _stopsPageController = null;
+    } else if (oldHasMultiple != newHasMultiple) {
+      final targetPage = widget.route.stops.isEmpty
+          ? 0
+          : _activeStopIndex.clamp(0, widget.route.stops.length - 1);
+      _activeStopIndex = targetPage;
+      _stopsPageController?.dispose();
+      _stopsPageController = PageController(
+        viewportFraction: newHasMultiple ? 0.86 : 1.0,
+        initialPage: targetPage,
+      );
+    } else if (widget.route.stops.isEmpty) {
+      _activeStopIndex = 0;
+    } else if (_activeStopIndex >= widget.route.stops.length) {
+      _activeStopIndex = widget.route.stops.length - 1;
+    }
   }
 
   void _onScroll() {
@@ -164,8 +186,8 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
     final route = widget.route;
     final sliderImages = route.cappedFeaturedMedia;
     final stops = route.stops;
-    final virtualStopCount =
-        stops.isNotEmpty ? stops.length * _kStopLoopFactor : 0;
+    final safeActiveStopIndex =
+        stops.isEmpty ? 0 : _activeStopIndex.clamp(0, stops.length - 1);
 
     final rawTopPadding = MediaQuery.paddingOf(context).top;
     // Safari Web veya notch'suz ortamlarda üst sınıra yapışmayı önlemek için minimum 14px nefes payı
@@ -526,16 +548,18 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                 size: 20,
                               ),
                               const SizedBox(width: 8),
-                              Text(
-                                'Rota Durakları ve Gezgin Notları',
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w800,
-                                  color: BeenHereColors.textPrimary,
+                              Expanded(
+                                child: Text(
+                                  'Rota Durakları ve Gezgin Notları',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w800,
+                                    color: BeenHereColors.textPrimary,
+                                  ),
                                 ),
                               ),
-                              const Spacer(),
-                              if (stops.isNotEmpty)
+                              if (stops.isNotEmpty) ...[
+                                const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 9,
@@ -547,7 +571,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Text(
-                                    '${_activeStopIndex + 1} / ${stops.length} Durak',
+                                    '${safeActiveStopIndex + 1} / ${stops.length} Durak',
                                     style: TextStyle(
                                       fontSize: 11.5,
                                       fontWeight: FontWeight.w700,
@@ -555,11 +579,12 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                     ),
                                   ),
                                 ),
+                              ],
                             ],
                           ),
                           const SizedBox(height: 14),
 
-                          // MEKANLAR İÇİN INFINITE CAROUSEL (BİR SONRAKİ İTEM UÇTAN GÖRÜNÜR)
+                          // MEKANLAR İÇİN SONLU CAROUSEL (2+ DURAKTA SONRAKİ İTEM UÇTAN GÖRÜNÜR)
                           if (stops.isEmpty)
                             Padding(
                               padding: EdgeInsets.symmetric(vertical: 16),
@@ -572,37 +597,47 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                           else ...[
                             SizedBox(
                               height: 385,
-                              child: PageView.builder(
-                                controller: stopsPageController,
-                                padEnds: false,
-                                itemCount: virtualStopCount,
-                                onPageChanged: (idx) {
-                                  setState(() {
-                                    _activeStopIndex = idx % stops.length;
-                                  });
-                                },
-                                itemBuilder: (context, index) {
-                                  final stop = stops[index % stops.length];
-                                  final isSaved =
-                                      _savedStopIds.contains(stop.id);
-                                  final isAdded =
-                                      _addedStopIds.contains(stop.id);
+                              child: ScrollConfiguration(
+                                behavior:
+                                    ScrollConfiguration.of(context).copyWith(
+                                  dragDevices: const {
+                                    PointerDeviceKind.touch,
+                                    PointerDeviceKind.mouse,
+                                    PointerDeviceKind.trackpad,
+                                  },
+                                ),
+                                child: PageView.builder(
+                                  controller: stopsPageController,
+                                  padEnds: false,
+                                  itemCount: stops.length,
+                                  onPageChanged: (idx) {
+                                    setState(() {
+                                      _activeStopIndex = idx;
+                                    });
+                                  },
+                                  itemBuilder: (context, index) {
+                                    final stop = stops[index];
+                                    final isSaved =
+                                        _savedStopIds.contains(stop.id);
+                                    final isAdded =
+                                        _addedStopIds.contains(stop.id);
 
-                                  return _StopSliderCard(
-                                    stop: stop,
-                                    isSaved: isSaved,
-                                    isAddedToRoute: isAdded,
-                                    onToggleSave: () => _toggleSaveStop(
-                                      stop.id,
-                                      stop.placeName,
-                                    ),
-                                    onToggleAddToRoute: () =>
-                                        _toggleAddToRouteStop(
-                                      stop.id,
-                                      stop.placeName,
-                                    ),
-                                  );
-                                },
+                                    return _StopSliderCard(
+                                      stop: stop,
+                                      isSaved: isSaved,
+                                      isAddedToRoute: isAdded,
+                                      onToggleSave: () => _toggleSaveStop(
+                                        stop.id,
+                                        stop.placeName,
+                                      ),
+                                      onToggleAddToRoute: () =>
+                                          _toggleAddToRouteStop(
+                                        stop.id,
+                                        stop.placeName,
+                                      ),
+                                    );
+                                  },
+                                ),
                               ),
                             ),
                             const SizedBox(height: 10),
@@ -612,7 +647,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    '📍 ${stops[_activeStopIndex].placeName}',
+                                    '📍 ${stops[safeActiveStopIndex].placeName}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -656,13 +691,15 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                 color: BeenHereColors.secondaryAmber,
                                 size: 20,
                               ),
-                              SizedBox(width: 8),
-                              Text(
-                                'Konaklama Noktaları',
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w800,
-                                  color: BeenHereColors.textPrimary,
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Konaklama Noktaları',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w800,
+                                    color: BeenHereColors.textPrimary,
+                                  ),
                                 ),
                               ),
                             ],
@@ -737,13 +774,15 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                 color: BeenHereColors.verifiedEmerald,
                                 size: 20,
                               ),
-                              SizedBox(width: 8),
-                              Text(
-                                'Seyahat Bütçesi ve Harcama Kalemleri',
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w800,
-                                  color: BeenHereColors.textPrimary,
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Seyahat Bütçesi ve Harcama Kalemleri',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w800,
+                                    color: BeenHereColors.textPrimary,
+                                  ),
                                 ),
                               ),
                             ],
@@ -764,13 +803,16 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text(
-                                      'Toplam Tahmini Maliyet:',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: BeenHereColors.textSecondary,
+                                    Expanded(
+                                      child: Text(
+                                        'Toplam Tahmini Maliyet:',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: BeenHereColors.textSecondary,
+                                        ),
                                       ),
                                     ),
+                                    const SizedBox(width: 8),
                                     Text(
                                       '\$${route.estimatedBudgetUsd.round()} (${route.estimatedBudgetLocal.round()} ${route.localCurrencySymbol})',
                                       style: TextStyle(
@@ -826,13 +868,15 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                 color: BeenHereColors.goldLeague,
                                 size: 20,
                               ),
-                              SizedBox(width: 8),
-                              Text(
-                                'Gezgin Soru & Cevap (Q&A)',
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w800,
-                                  color: BeenHereColors.textPrimary,
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Gezgin Soru & Cevap (Q&A)',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w800,
+                                    color: BeenHereColors.textPrimary,
+                                  ),
                                 ),
                               ),
                             ],

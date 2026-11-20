@@ -1,13 +1,26 @@
 import 'package:flutter/foundation.dart';
 import '../../../../data/repositories/static_home_routes_repository.dart';
+import '../../../../data/stores/geography_store.dart';
 import '../../../../domain/models/route_feed_models.dart';
 import '../../../core/filters/geography_tree_filter_mixin.dart';
 
 class HomeFeedViewModel extends ChangeNotifier with GeographyTreeFilterMixin {
-  HomeFeedViewModel({StaticHomeRoutesRepository? repository})
-      : _repository = repository ?? StaticHomeRoutesRepository();
+  HomeFeedViewModel({
+    StaticHomeRoutesRepository? repository,
+    this._geographyStore,
+  }) : _repository = repository ?? StaticHomeRoutesRepository() {
+    _geographyStore?.addListener(_handleGeographyStoreChanged);
+  }
 
   final StaticHomeRoutesRepository _repository;
+  final GeographyStore? _geographyStore;
+
+  void _handleGeographyStoreChanged() {
+    notifyListeners();
+  }
+
+  @override
+  GeographyStore? get geographyStore => _geographyStore;
 
   /// Kullanıcının detay ekranında sorduğu yeni soruları statik oturumda tutar
   final Map<String, List<RouteQuestionItem>> _sessionQuestionsByRoute = {};
@@ -21,20 +34,48 @@ class HomeFeedViewModel extends ChangeNotifier with GeographyTreeFilterMixin {
       enabledFilterPillsCount + (isBudgetFilterActive ? 1 : 0);
 
   @override
-  List<RouteContinentCatalogItem> get searchContinentsCatalog =>
-      StaticHomeRoutesRepository.continentsCatalog;
+  List<RouteContinentCatalogItem> get searchContinentsCatalog {
+    final store = _geographyStore;
+    if (store != null &&
+        store.hasLoaded &&
+        store.continentsCatalog.isNotEmpty) {
+      return store.continentsCatalog;
+    }
+    return StaticHomeRoutesRepository.continentsCatalog;
+  }
 
   @override
-  List<RouteSearchSuggestion> buildSearchSuggestions(String query) =>
-      _repository.buildSearchSuggestions(query);
+  List<RouteSearchSuggestion> buildSearchSuggestions(String query) {
+    final store = _geographyStore;
+    if (store != null && store.hasLoaded) {
+      final dbSuggestions = store.buildSearchSuggestions(
+        query,
+        lang: store.lang,
+      );
+      if (dbSuggestions.isNotEmpty) {
+        return dbSuggestions;
+      }
+    }
+    return _repository.buildSearchSuggestions(query);
+  }
 
   @override
-  int countItemsForContinent(ContinentFilter continent) =>
-      _repository.countRoutesForContinent(continent);
+  int countItemsForContinent(ContinentFilter continent) {
+    final store = _geographyStore;
+    if (store != null && store.hasLoaded) {
+      return store.countRoutesForContinent(continent);
+    }
+    return _repository.countRoutesForContinent(continent);
+  }
 
   @override
-  int countItemsForRegion(RouteRegionCatalogItem region) =>
-      _repository.countRoutesForRegion(region);
+  int countItemsForRegion(RouteRegionCatalogItem region) {
+    final store = _geographyStore;
+    if (store != null && store.hasLoaded) {
+      return store.countRoutesForRegion(region.id);
+    }
+    return _repository.countRoutesForRegion(region);
+  }
 
   @override
   String get itemCountUnitLabel => 'Rota';
@@ -57,11 +98,19 @@ class HomeFeedViewModel extends ChangeNotifier with GeographyTreeFilterMixin {
   List<CountryFilterOption> getCountriesForContinent(
     ContinentFilter continent,
   ) {
+    final store = _geographyStore;
+    if (store != null && store.hasLoaded) {
+      return store.getCountriesForContinent(continent, useRoutesCount: true);
+    }
     return _repository.getCountriesForContinent(continent);
   }
 
   @override
   List<String> getCitiesForCountry(String countryCode) {
+    final store = _geographyStore;
+    if (store != null && store.hasLoaded) {
+      return store.getCitiesForCountry(countryCode);
+    }
     return _repository.getCitiesForCountry(countryCode);
   }
 
@@ -138,6 +187,7 @@ class HomeFeedViewModel extends ChangeNotifier with GeographyTreeFilterMixin {
 
   @override
   void dispose() {
+    _geographyStore?.removeListener(_handleGeographyStoreChanged);
     disposeSearchDebounce();
     super.dispose();
   }

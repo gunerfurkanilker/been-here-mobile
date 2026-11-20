@@ -329,6 +329,16 @@ class StaticPlaceDiscoveryRepository {
         final target = _normalizeTr(pill.cityName ?? '');
         if (target.isEmpty) return false;
         return _normalizeTr(place.city) == target;
+      case RouteFilterPillType.district:
+        final districtTarget = _normalizeTr(pill.districtName ?? '');
+        final cityTarget = _normalizeTr(pill.cityName ?? '');
+        if (districtTarget.isNotEmpty &&
+            (_normalizeTr(place.district) == districtTarget ||
+                _normalizeTr(place.name).contains(districtTarget) ||
+                _normalizeTr(place.shortSummary).contains(districtTarget))) {
+          return true;
+        }
+        return cityTarget.isNotEmpty && _normalizeTr(place.city) == cityTarget;
       case RouteFilterPillType.keyword:
         return true;
     }

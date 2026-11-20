@@ -1,78 +1,78 @@
 import 'package:flutter/material.dart';
 
-/// ColorHunt esintili Koyu Tema Paleti (Kömür Arduvaz & Adaçayı Teal)
-/// Palet: #222831, #31363F, #76ABAE, #EEEEEE
+/// ColorHunt esintili Koyu Tema Paleti (Gece Laciverti & Mint Adaçayı)
+/// Palet: #202734, #36415A, #B7D894, #E0F8C7
 class BeenHereDarkColors {
   BeenHereDarkColors._();
 
-  /// Derin kömür-arduvaz taban arka plan (#222831)
-  static const Color background = Color(0xFF222831);
+  /// Derin gece laciverti taban arka plan (#202734)
+  static const Color background = Color(0xFF202734);
 
-  /// Kartlar & paneller için koyu gunmetal yüzey (#31363F)
-  static const Color surface = Color(0xFF31363F);
+  /// Kartlar, arama çubukları & paneller için indigo-arduvaz yüzey (#36415A)
+  static const Color surface = Color(0xFF36415A);
 
-  /// Yükseltilmiş yüzeyler ve kart içi konteynerlar (#3B414B)
-  static const Color surfaceElevated = Color(0xFF3B414B);
+  /// Yükseltilmiş yüzeyler ve etiket/buton konteynerları (#414E6B)
+  static const Color surfaceElevated = Color(0xFF414E6B);
 
-  /// Adaçayı / mat teal birincil pusula & rota vurgusu (#76ABAE)
-  static const Color primaryCompass = Color(0xFF76ABAE);
+  /// Adaçayı / fıstık yeşili birincil pusula & rota vurgusu (#B7D894)
+  static const Color primaryCompass = Color(0xFFB7D894);
 
-  /// Açık adaçayı-buzul ikincil vurgu & parlayan göstergeler (#9ECBCE)
-  static const Color secondaryAmber = Color(0xFF9ECBCE);
+  /// Açık mint parıltısı ikincil vurgu & parlayan göstergeler (#E0F8C7)
+  static const Color secondaryAmber = Color(0xFFE0F8C7);
 
-  /// Doğrulanmış rozetler ve onaylar için adaçayı teal (#76ABAE)
-  static const Color verifiedEmerald = Color(0xFF76ABAE);
+  /// Doğrulanmış rozetler ve yeşil bayraklar için adaçayı/fıstık yeşili (#B7D894)
+  static const Color verifiedEmerald = Color(0xFFB7D894);
 
-  /// Gezgin ligleri ve madalyalar için açık adaçayı-gümüş vurgu (#9ECBCE)
-  static const Color goldLeague = Color(0xFF9ECBCE);
+  /// Puanlama yıldızı, gezgin ligleri ve madalyalar için açık mint vurgu (#E0F8C7)
+  static const Color goldLeague = Color(0xFFE0F8C7);
 
-  /// Birincil net gövde ve başlık metinleri (#EEEEEE)
-  static const Color textPrimary = Color(0xFFEEEEEE);
+  /// Gece laciverti yüzeylerde uzun okumalarda göz yormayan net açık kırık beyaz (#F1F5EE)
+  static const Color textPrimary = Color(0xFFF1F5EE);
 
-  /// İkincil soluk arduvaz-gri açıklama metinleri (#A8B1BC)
-  static const Color textSecondary = Color(0xFFA8B1BC);
+  /// Soğuk indigo-arduvazla uyumlu ikincil açıklama metinleri (#B3BED1)
+  static const Color textSecondary = Color(0xFFB3BED1);
 
-  /// Kart kenarlıkları ve ince bölücüler (#454C58)
-  static const Color borderSubtle = Color(0xFF454C58);
+  /// Kart kenarlıkları ve ince bölücüler (#4B597A)
+  static const Color borderSubtle = Color(0xFF4B597A);
 }
 
-/// ColorHunt esintili Aydınlık Tema Paleti (Kuzey Çelik Mavisi & Sıcak Krem)
-/// Palet: #81A6C6, #AACDDC, #F3E3D0, #D2C4B4
+/// ColorHunt esintili Aydınlık Tema Paleti (Fildişi Krem & Botanik Adaçayı)
+/// Palet: #FFFDF6, #FAF6E9, #DDEB9D, #A0C878
 class BeenHereLightColors {
   BeenHereLightColors._();
 
-  /// Sıcak krem / kum taban arka plan (#F3E3D0)
-  static const Color background = Color(0xFFF3E3D0);
+  /// Sıcak fildişi beyazı taban arka plan (#FFFDF6)
+  static const Color background = Color(0xFFFFFDF6);
 
-  /// Kartlar & paneller için hafifçe yükseltilmiş sıcak fildişi yüzey (#FAF3EA)
-  static const Color surface = Color(0xFFFAF3EA);
+  /// Kartlar, arama çubukları ve modallar için sıcak krem yüzey (#FAF6E9)
+  static const Color surface = Color(0xFFFAF6E9);
 
-  /// Yükseltilmiş yüzeyler ve kart içi taş rengi konteynerlar (#E7DAC9)
-  static const Color surfaceElevated = Color(0xFFE7DAC9);
+  /// Yükseltilmiş yüzeyler, etiket hapları ve kart içi sıcak kum-krem konteynerlar (#F1EEDB)
+  static const Color surfaceElevated = Color(0xFFF1EEDB);
 
-  /// Kuzey çelik mavisi birincil pusula & rota vurgusu (#81A6C6)
-  static const Color primaryCompass = Color(0xFF81A6C6);
+  /// Adaçayı / fıstık yeşili birincil pusula & rota vurgusu (#A0C878)
+  static const Color primaryCompass = Color(0xFFA0C878);
 
-  /// Yumuşak gök mavisi cam vurgusu ve ikincil konteyner tonu (#AACDDC)
-  static const Color softSky = Color(0xFFAACDDC);
+  /// Açık limon-adaçayı cam vurgusu ve ikincil konteyner tonu (#DDEB9D)
+  static const Color softSky = Color(0xFFDDEB9D);
 
-  /// Açık yüzeylerde yüksek okunurluk için derinleştirilmiş çelik/gök vurgu (#426A8C)
-  static const Color secondaryAmber = Color(0xFF426A8C);
+  /// Açık yüzeylerde WCAG okunurluğu için derinleştirilmiş zeytin/adaçayı vurgu (#557C34)
+  static const Color secondaryAmber = Color(0xFF557C34);
 
-  /// Doğrulanmış rozetler ve onaylar için derin kuzey deniz-teal tonu (#2B6675)
-  static const Color verifiedEmerald = Color(0xFF2B6675);
+  /// Doğrulanmış rozetler ve yeşil bayraklar için yüksek kontrastlı botanik yeşil (#3E6B2C)
+  static const Color verifiedEmerald = Color(0xFF3E6B2C);
 
-  /// Gezgin ligleri ve madalyalar için sıcak kum-bronz vurgu (#7C5A34)
-  static const Color goldLeague = Color(0xFF7C5A34);
+  /// Puanlama yıldızı, gezgin ligleri ve madalyalar için sıcak bal-bronz altın tonu (#8C6D23)
+  static const Color goldLeague = Color(0xFF8C6D23);
 
-  /// Birincil net gövde ve başlık metinleri için derin arduvaz lacivert (#1E2D3B)
-  static const Color textPrimary = Color(0xFF1E2D3B);
+  /// Birincil net gövde ve başlık metinleri için koyu orman-kömür (#1F2B1B)
+  static const Color textPrimary = Color(0xFF1F2B1B);
 
-  /// İkincil açıklama metinleri için yumuşak arduvaz-taupe (#506273)
-  static const Color textSecondary = Color(0xFF506273);
+  /// İkincil açıklama metinleri için yumuşak adaçayı-arduvaz (#53614C)
+  static const Color textSecondary = Color(0xFF53614C);
 
-  /// Kart kenarlıkları ve ince bölücüler için sıcak taupe (#D2C4B4)
-  static const Color borderSubtle = Color(0xFFD2C4B4);
+  /// Kart kenarlıkları ve ince bölücüler için paletle uyumlu sıcak krem-taş tonu (#E0DEC9)
+  static const Color borderSubtle = Color(0xFFE0DEC9);
 }
 
 /// Uygulama Genelinde Reaktif Tema Kontrolcüsü
@@ -156,10 +156,16 @@ class BeenHereColors {
 class BeenHereTheme {
   BeenHereTheme._();
 
+  /// Uygulama genelinde kullanılan birincil font ailesi.
+  static const String fontFamily = 'Poppins';
+
+  /// Koyu tema konfigürasyonu (Gece Laciverti & Mint Adaçayı paleti:
+  /// #202734, #36415A, #B7D894, #E0F8C7)
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
+      fontFamily: fontFamily,
       scaffoldBackgroundColor: BeenHereDarkColors.background,
       colorScheme: const ColorScheme.dark(
         primary: BeenHereDarkColors.primaryCompass,
@@ -196,10 +202,13 @@ class BeenHereTheme {
     );
   }
 
+  /// Aydınlık tema konfigürasyonu (Fildişi Krem & Botanik Adaçayı paleti:
+  /// #FFFDF6, #FAF6E9, #DDEB9D, #A0C878)
   static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+      fontFamily: fontFamily,
       scaffoldBackgroundColor: BeenHereLightColors.background,
       colorScheme: const ColorScheme.light(
         primary: BeenHereLightColors.primaryCompass,

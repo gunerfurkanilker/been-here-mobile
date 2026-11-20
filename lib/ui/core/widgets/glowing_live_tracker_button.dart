@@ -21,6 +21,7 @@ class GlowingLiveTrackerButton extends StatefulWidget {
 class _GlowingLiveTrackerButtonState extends State<GlowingLiveTrackerButton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulseController;
+  bool _isHovered = false;
 
   @override
   void initState() {
@@ -42,62 +43,55 @@ class _GlowingLiveTrackerButtonState extends State<GlowingLiveTrackerButton>
     return AnimatedBuilder(
       animation: _pulseController,
       builder: (context, _) {
+        final isDark = BeenHereThemeController.instance.isDark;
         final glowAlpha = widget.isActive
             ? 0.25 + (_pulseController.value * 0.45)
-            : 0.12 + (_pulseController.value * 0.15);
+            : 0.18;
 
         final activeColor = widget.isActive
             ? BeenHereColors.verifiedEmerald
             : BeenHereColors.goldLeague;
 
-        return InkWell(
-          borderRadius: BorderRadius.circular(24),
-          onTap: widget.onPressed,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            decoration: BoxDecoration(
-              color: BeenHereColors.surfaceElevated,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: activeColor.withValues(alpha: 0.75),
-                width: 1.3,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: activeColor.withValues(alpha: glowAlpha),
-                  blurRadius: widget.isActive ? 16 : 8,
-                  spreadRadius: widget.isActive ? 2 : 0,
+        return Tooltip(
+          message: widget.isActive ? 'Canlı İzleme Açık' : 'Geofence / EXIF',
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: widget.onPressed,
+              onHover: (hovered) {
+                if (_isHovered != hovered) {
+                  setState(() => _isHovered = hovered);
+                }
+              },
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? BeenHereColors.surface.withValues(alpha: 0.8)
+                      : BeenHereColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    if (widget.isActive || _isHovered)
+                      BoxShadow(
+                        color: activeColor.withValues(alpha: glowAlpha),
+                        blurRadius: widget.isActive ? 14 : 10,
+                        spreadRadius: widget.isActive ? 1.5 : 0,
+                      ),
+                  ],
                 ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  widget.isActive
-                      ? Icons.radar_rounded
-                      : Icons.sensors_rounded,
-                  size: 18,
-                  color: activeColor,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  widget.isActive ? 'Canlı İzleme Açık' : 'Geofence / EXIF',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                child: Center(
+                  child: Icon(
+                    widget.isActive
+                        ? Icons.radar_rounded
+                        : Icons.sensors_rounded,
+                    size: 21,
                     color: activeColor,
                   ),
                 ),
-                if (!widget.isPremiumUser) ...[
-                  const SizedBox(width: 4),
-                  Icon(
-                    Icons.workspace_premium_rounded,
-                    size: 14,
-                    color: BeenHereColors.goldLeague,
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
         );

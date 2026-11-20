@@ -1,5 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
+import 'data/services/been_here_api_client.dart';
+import 'data/services/geography_api_service.dart';
+import 'data/services/places_api_service.dart';
+import 'data/stores/geography_store.dart';
+import 'data/stores/places_store.dart';
 import 'ui/core/theme/been_here_theme.dart';
 import 'ui/core/view_models/navigation_shell_view_model.dart';
 import 'ui/core/widgets/been_here_shell_scaffold.dart';
@@ -15,7 +23,22 @@ void main() {
 }
 
 class BeenHereApp extends StatefulWidget {
-  const BeenHereApp({super.key});
+  const BeenHereApp({
+    super.key,
+    this.apiClient,
+    this.placesApiService,
+    this.placesStore,
+    this.geographyApiService,
+    this.geographyStore,
+    this.enablePlacesRemoteBackend,
+  });
+
+  final BeenHereApiClient? apiClient;
+  final PlacesApiService? placesApiService;
+  final PlacesStore? placesStore;
+  final GeographyApiService? geographyApiService;
+  final GeographyStore? geographyStore;
+  final bool? enablePlacesRemoteBackend;
 
   @override
   State<BeenHereApp> createState() => _BeenHereAppState();
@@ -27,22 +50,94 @@ class _BeenHereAppState extends State<BeenHereApp> {
   PlaceSearchViewModel? _placeSearchViewModel;
   RouteBuilderViewModel? _routeBuilderViewModel;
 
+  BeenHereApiClient? _ownedApiClient;
+  PlacesStore? _ownedPlacesStore;
+  PlacesStore? _activePlacesStore;
+  GeographyStore? _ownedGeographyStore;
+  GeographyStore? _activeGeographyStore;
+  late final bool _enablePlacesRemoteBackend;
+
+  bool _resolvePlacesRemoteBackend() {
+    if (widget.enablePlacesRemoteBackend != null) {
+      return widget.enablePlacesRemoteBackend!;
+    }
+    if (widget.placesStore != null ||
+        widget.placesApiService != null ||
+        widget.apiClient != null) {
+      return true;
+    }
+    final bindingName = WidgetsBinding.instance.runtimeType.toString();
+    return !bindingName.contains('TestWidgetsFlutterBinding');
+  }
+
   NavigationShellViewModel get shellViewModel =>
       _shellViewModel ??= NavigationShellViewModel();
   HomeFeedViewModel get homeFeedViewModel =>
-      _homeFeedViewModel ??= HomeFeedViewModel();
+      _homeFeedViewModel ??= HomeFeedViewModel(
+        geographyStore: _activeGeographyStore,
+      );
   PlaceSearchViewModel get placeSearchViewModel =>
-      _placeSearchViewModel ??= PlaceSearchViewModel();
+      _placeSearchViewModel ??= PlaceSearchViewModel(
+        placesStore: _activePlacesStore,
+        geographyStore: _activeGeographyStore,
+        enableRemoteBackend: _enablePlacesRemoteBackend,
+      );
   RouteBuilderViewModel get routeBuilderViewModel =>
-      _routeBuilderViewModel ??= RouteBuilderViewModel();
+      _routeBuilderViewModel ??= RouteBuilderViewModel(
+        geographyStore: _activeGeographyStore,
+      );
 
   @override
   void initState() {
     super.initState();
+    _enablePlacesRemoteBackend = _resolvePlacesRemoteBackend();
+    if (_enablePlacesRemoteBackend) {
+      if (widget.placesStore != null) {
+        _activePlacesStore = widget.placesStore;
+      } else {
+        final client =
+            widget.apiClient ?? (_ownedApiClient ??= BeenHereApiClient());
+        final service =
+            widget.placesApiService ?? PlacesApiService(apiClient: client);
+        _ownedPlacesStore = PlacesStore(apiService: service);
+        _activePlacesStore = _ownedPlacesStore;
+      }
+    }
+
+    final enableGeographyStore =
+        _enablePlacesRemoteBackend ||
+        widget.geographyStore != null ||
+        widget.geographyApiService != null;
+    if (enableGeographyStore) {
+      if (widget.geographyStore != null) {
+        _activeGeographyStore = widget.geographyStore;
+      } else {
+        final client =
+            widget.apiClient ?? (_ownedApiClient ??= BeenHereApiClient());
+        final geoService =
+            widget.geographyApiService ??
+            GeographyApiService(apiClient: client);
+        _ownedGeographyStore = GeographyStore(apiService: geoService);
+        _activeGeographyStore = _ownedGeographyStore;
+      }
+    }
+
     final _ = shellViewModel;
     final _ = homeFeedViewModel;
     final _ = placeSearchViewModel;
     final _ = routeBuilderViewModel;
+
+    if (_enablePlacesRemoteBackend &&
+        _activePlacesStore != null &&
+        !_activePlacesStore!.hasCompletedInitialLoad &&
+        !_activePlacesStore!.isLoading) {
+      unawaited(_activePlacesStore!.loadInitial());
+    }
+    if (_activeGeographyStore != null &&
+        !_activeGeographyStore!.hasLoaded &&
+        !_activeGeographyStore!.isLoading) {
+      unawaited(_activeGeographyStore!.ensureLoaded(lang: 'tr'));
+    }
   }
 
   @override
@@ -51,6 +146,9 @@ class _BeenHereAppState extends State<BeenHereApp> {
     _homeFeedViewModel?.dispose();
     _placeSearchViewModel?.dispose();
     _routeBuilderViewModel?.dispose();
+    _ownedPlacesStore?.dispose();
+    _ownedGeographyStore?.dispose();
+    _ownedApiClient?.close();
     super.dispose();
   }
 

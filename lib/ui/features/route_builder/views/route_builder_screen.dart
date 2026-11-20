@@ -6,6 +6,8 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../core/theme/been_here_theme.dart';
 import '../../../core/widgets/geography_tree_filter_bar.dart';
 import '../view_models/route_builder_view_model.dart';
+import 'route_budget_selector_step.dart';
+import 'route_date_selector_step.dart';
 
 class RouteBuilderScreen extends StatefulWidget {
   const RouteBuilderScreen({
@@ -157,41 +159,6 @@ class _RouteBuilderScreenState extends State<RouteBuilderScreen>
     return false;
   }
 
-  Future<void> _pickCustomDateRange(BuildContext context) async {
-    final now = DateTime.now();
-    final initialRange = widget.viewModel.customDateRange ??
-        DateTimeRange(
-          start: now.add(const Duration(days: 7)),
-          end: now.add(const Duration(days: 11)),
-        );
-
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(now.year - 3),
-      lastDate: DateTime(now.year + 3),
-      initialDateRange: initialRange,
-      helpText: 'Seyahat Tarih Aralığını Seç',
-      saveText: 'Seç',
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.dark(
-              primary: BeenHereColors.primaryCompass,
-              onPrimary: Colors.white,
-              surface: BeenHereColors.surface,
-              onSurface: BeenHereColors.textPrimary,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked != null) {
-      widget.viewModel.setCustomDateRange(picked);
-    }
-  }
-
   void _handleBottomPrimaryAction(BuildContext context) {
     if (widget.viewModel.currentStep == RouteWizardStep.locations) {
       if (!widget.viewModel.hasAnyDestinationSelected) {
@@ -337,13 +304,12 @@ class _RouteBuilderScreenState extends State<RouteBuilderScreen>
           viewModel: widget.viewModel,
         );
       case RouteWizardStep.dates:
-        return _StepTwoDatesPlaceholderBody(
+        return RouteDateSelectorStep(
           key: const ValueKey<String>('wizard-step-dates'),
           viewModel: widget.viewModel,
-          onPickCustomRange: () => _pickCustomDateRange(context),
         );
       case RouteWizardStep.budget:
-        return _StepThreeBudgetPlaceholderBody(
+        return RouteBudgetSelectorStep(
           key: const ValueKey<String>('wizard-step-budget'),
           viewModel: widget.viewModel,
         );
@@ -904,16 +870,7 @@ class _CountryBannerCard extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.network(
-                      country.imageUrl,
-                      fit: BoxFit.cover,
-                      cacheWidth: 640,
-                      gaplessPlayback: true,
-                    filterQuality: FilterQuality.low,
-                    errorBuilder: (_, _, _) => Container(
-                      color: const Color(0xFF16273D),
-                    ),
-                  ),
+                    _DynamicLocationBackgroundImage(imageUrl: country.imageUrl),
 
                   // Karartma ve Degrade Katmanı
                   DecoratedBox(
@@ -1084,16 +1041,7 @@ class _LocationPhotoCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Image.network(
-              imageUrl,
-              fit: BoxFit.cover,
-              cacheWidth: 640,
-              gaplessPlayback: true,
-              filterQuality: FilterQuality.low,
-              errorBuilder: (_, _, _) => Container(
-                color: const Color(0xFF16273D),
-              ),
-            ),
+            _DynamicLocationBackgroundImage(imageUrl: imageUrl),
 
             // Karartma Katmanı
             DecoratedBox(
@@ -1143,6 +1091,37 @@ class _LocationPhotoCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Şehir ve ülke kartlarının arka plan görselini yöneten ortak bileşen.
+/// Geçerli ağ görseli yoksa yerel skyline yer tutucu görselini kullanır.
+class _DynamicLocationBackgroundImage extends StatelessWidget {
+  const _DynamicLocationBackgroundImage({required this.imageUrl});
+
+  final String imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = imageUrl.trim();
+    if (trimmed.isEmpty) {
+      return Image.asset(
+        RouteBuilderViewModel.cityPlaceholderAsset,
+        fit: BoxFit.cover,
+      );
+    }
+
+    return Image.network(
+      trimmed,
+      fit: BoxFit.cover,
+      cacheWidth: 640,
+      gaplessPlayback: true,
+      filterQuality: FilterQuality.low,
+      errorBuilder: (_, _, _) => Image.asset(
+        RouteBuilderViewModel.cityPlaceholderAsset,
+        fit: BoxFit.cover,
       ),
     );
   }
@@ -1338,153 +1317,8 @@ class _WizardBottomNavigationBar extends StatelessWidget {
 }
 
 // =============================================================================
-// DİĞER ADIMLAR (1.2 Tarih, 1.3 Bütçe, 1.4 Ziyaretçi)
+// DİĞER ADIMLAR (1.4 Ziyaretçi)
 // =============================================================================
-class _StepTwoDatesPlaceholderBody extends StatelessWidget {
-  const _StepTwoDatesPlaceholderBody({
-    super.key,
-    required this.viewModel,
-    required this.onPickCustomRange,
-  });
-
-  final RouteBuilderViewModel viewModel;
-  final VoidCallback onPickCustomRange;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: BeenHereColors.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: BeenHereColors.borderSubtle),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Seçili Tarih Adımı',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: BeenHereColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  ChoiceChip(
-                    label: const Text('Esnek / Belirsiz'),
-                    selected: viewModel.dateMode == RouteDateMode.flexible,
-                    onSelected: (_) =>
-                        viewModel.setDateMode(RouteDateMode.flexible),
-                  ),
-                  ChoiceChip(
-                    label: const Text('Şu An / Geçmiş Gezi 📸'),
-                    selected:
-                        viewModel.dateMode == RouteDateMode.currentOrPastTrip,
-                    onSelected: (_) =>
-                        viewModel.setDateMode(RouteDateMode.currentOrPastTrip),
-                  ),
-                  ChoiceChip(
-                    label: const Text('Bu Hafta Sonu'),
-                    selected:
-                        viewModel.dateMode == RouteDateMode.upcomingWeekend,
-                    onSelected: (_) =>
-                        viewModel.setDateMode(RouteDateMode.upcomingWeekend),
-                  ),
-                  ActionChip(
-                    label: Text(
-                      viewModel.dateMode == RouteDateMode.customRange
-                          ? viewModel.formattedDateSummary
-                          : 'Takvimden Tarih Seç...',
-                    ),
-                    onPressed: onPickCustomRange,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StepThreeBudgetPlaceholderBody extends StatelessWidget {
-  const _StepThreeBudgetPlaceholderBody({
-    super.key,
-    required this.viewModel,
-  });
-
-  final RouteBuilderViewModel viewModel;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: BeenHereColors.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: BeenHereColors.borderSubtle),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Seçili Bütçe Adımı',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: BeenHereColors.textPrimary,
-                    ),
-                  ),
-                  Switch.adaptive(
-                    value: viewModel.isBudgetEnabled,
-                    activeTrackColor: BeenHereColors.primaryCompass,
-                    onChanged: (_) => viewModel.toggleBudgetEnabled(),
-                  ),
-                ],
-              ),
-              Text(
-                viewModel.formattedBudgetSummary,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: BeenHereColors.primaryCompass,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (viewModel.isBudgetEnabled)
-                RangeSlider(
-                  values: RangeValues(
-                    viewModel.minBudget,
-                    viewModel.maxBudget,
-                  ),
-                  min: 0,
-                  max: viewModel.currency.maxLimit,
-                  divisions: 50,
-                  onChanged: (v) =>
-                      viewModel.updateRouteBudgetRange(v.start, v.end),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _StepFourTravelersPlaceholderBody extends StatelessWidget {
   const _StepFourTravelersPlaceholderBody({
     super.key,

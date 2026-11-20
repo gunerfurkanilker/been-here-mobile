@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import '../../../../data/stores/geography_store.dart';
+import '../../../../domain/models/geography_models.dart';
 import '../../../../domain/models/route_feed_models.dart';
 import '../../../core/filters/been_here_search_filter_controller.dart';
 
@@ -35,13 +39,67 @@ class BuilderCountryCatalogItem {
     required this.flagEmoji,
     required this.imageUrl,
     required this.cities,
-  });
+    this.hemisphere = GeographyHemisphere.northern,
+    String currencyCode = '',
+    String currencySymbol = '',
+    String currencyNameTr = '',
+  })  : _rawCurrencyCode = currencyCode,
+        _rawCurrencySymbol = currencySymbol,
+        _rawCurrencyNameTr = currencyNameTr;
 
   final String code;
   final String name;
   final String flagEmoji;
   final String imageUrl;
   final List<BuilderCityCatalogItem> cities;
+  final GeographyHemisphere hemisphere;
+  final String _rawCurrencyCode;
+  final String _rawCurrencySymbol;
+  final String _rawCurrencyNameTr;
+
+  String get currencyCode {
+    final raw = _rawCurrencyCode.trim().toUpperCase();
+    if (raw.isNotEmpty) return raw;
+    return resolveCountryCurrencyFallback(code).code;
+  }
+
+  String get currencySymbol {
+    final raw = _rawCurrencySymbol.trim();
+    if (raw.isNotEmpty) return raw;
+    final resolvedCode = currencyCode;
+    final fallback = resolveCountryCurrencyFallback(code);
+    if (resolvedCode == fallback.code) return fallback.symbol;
+    return resolveBaselineExchangeRate(resolvedCode)?.symbol ?? resolvedCode;
+  }
+
+  String get currencyNameTr {
+    final raw = _rawCurrencyNameTr.trim();
+    if (raw.isNotEmpty) return raw;
+    final resolvedCode = currencyCode;
+    final fallback = resolveCountryCurrencyFallback(code);
+    if (resolvedCode == fallback.code) return fallback.nameTr;
+    return resolveBaselineExchangeRate(resolvedCode)?.nameTr ?? resolvedCode;
+  }
+}
+
+/// Seçili ülkelerden veya popüler katalogdan türetilen tekilleştirilmiş para birimi seçeneği
+class BuilderCountryCurrencyOption {
+  const BuilderCountryCurrencyOption({
+    required this.code,
+    required this.symbol,
+    required this.nameTr,
+    required this.countryNames,
+    required this.flagEmojis,
+  });
+
+  final String code;
+  final String symbol;
+  final String nameTr;
+  final List<String> countryNames;
+  final List<String> flagEmojis;
+
+  String get flagsText => flagEmojis.join();
+  String get countriesSummary => countryNames.join(', ');
 }
 
 /// Kıtaların Alt Bölgeleri (Örn: Batı Avrupa, Doğu Avrupa, İskandinavya)
@@ -78,10 +136,62 @@ class BuilderContinentCatalogItem {
 }
 
 enum RouteDateMode {
-  flexible,
-  currentOrPastTrip,
-  upcomingWeekend,
-  customRange,
+  flexible('FLEXIBLE', 'Esnek Tarihler'),
+  instantTrip('CURRENT_OR_PAST_TRIP', 'Anlık Gezi'),
+  seasons('SEASONS', 'Mevsimler'),
+  customRange('CUSTOM_RANGE', 'Belirli Tarihler');
+
+  const RouteDateMode(this.apiValue, this.labelTr);
+  final String apiValue;
+  final String labelTr;
+}
+
+/// Adım 2 (Tarih Aralığı Seçimi) içindeki alt ekran durumu
+enum RouteDateSubView {
+  hub,
+  flexibleMonths,
+  instantCalendar,
+  seasons,
+  specificCalendar,
+}
+
+/// Mevsimler modundaki 4 mevsim (2x2 sıra: Yaz | İlkbahar, Sonbahar | Kış)
+enum RouteSeason {
+  summer('SUMMER', 'Yaz'),
+  spring('SPRING', 'İlkbahar'),
+  autumn('AUTUMN', 'Sonbahar'),
+  winter('WINTER', 'Kış');
+
+  const RouteSeason(this.apiValue, this.labelTr);
+  final String apiValue;
+  final String labelTr;
+}
+
+/// Backend rota oluşturma / sihirbaz API gönderimi için tarih özeti modeli
+class RouteDateSelectionPayload {
+  const RouteDateSelectionPayload({
+    required this.dateMode,
+    this.startDate,
+    this.endDate,
+    this.flexiblePeriod,
+    required this.dateRangeLabel,
+  });
+
+  final String dateMode;
+  final String? startDate;
+  final String? endDate;
+  final String? flexiblePeriod;
+  final String dateRangeLabel;
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'date_mode': dateMode,
+      if (startDate != null) 'start_date': startDate,
+      if (endDate != null) 'end_date': endDate,
+      if (flexiblePeriod != null) 'flexible_period': flexiblePeriod,
+      'date_range_label': dateRangeLabel,
+    };
+  }
 }
 
 enum RouteBudgetCurrency {
@@ -97,7 +207,26 @@ enum RouteBudgetCurrency {
 
 class RouteBuilderViewModel extends ChangeNotifier
     implements BeenHereSearchFilterController {
-  RouteBuilderViewModel();
+  RouteBuilderViewModel({
+    this._geographyStore,
+    DateTime Function()? clock,
+  }) : _clock = clock ?? DateTime.now {
+    _geographyStore?.addListener(_handleGeographyStoreChanged);
+  }
+
+  final GeographyStore? _geographyStore;
+  final DateTime Function() _clock;
+
+  void _handleGeographyStoreChanged() {
+    _syncRecommendedHemisphere();
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _geographyStore?.removeListener(_handleGeographyStoreChanged);
+    super.dispose();
+  }
 
   RouteWizardStep _currentStep = RouteWizardStep.locations;
   RouteWizardStep get currentStep => _currentStep;
@@ -133,25 +262,76 @@ class RouteBuilderViewModel extends ChangeNotifier
   RouteDateMode _dateMode = RouteDateMode.flexible;
   RouteDateMode get dateMode => _dateMode;
 
-  DateTimeRange? _customDateRange;
-  DateTimeRange? get customDateRange => _customDateRange;
+  RouteDateSubView _dateSubView = RouteDateSubView.hub;
+  RouteDateSubView get dateSubView => _dateSubView;
 
-  bool _isBudgetEnabled = false;
+  // Mod 1: Esnek Tarihler (Ay Aralığı)
+  DateTime? _flexibleStartMonth;
+  DateTime? get flexibleStartMonth => _flexibleStartMonth;
+  DateTime? _flexibleEndMonth;
+  DateTime? get flexibleEndMonth => _flexibleEndMonth;
+
+  // Mod 2: Anlık Gezi (Bugünü kapsayan aralık)
+  DateTimeRange? _instantTripRange;
+  DateTimeRange? get instantTripRange => _instantTripRange;
+  DateTime? _instantTripPendingDate;
+  DateTime? get instantTripPendingDate => _instantTripPendingDate;
+  String? _instantTripValidationError;
+  String? get instantTripValidationError => _instantTripValidationError;
+
+  // Mod 3: Mevsimler
+  GeographyHemisphere _selectedHemisphere = GeographyHemisphere.northern;
+  GeographyHemisphere get selectedHemisphere => _selectedHemisphere;
+  bool _hasManualHemisphereOverride = false;
+  bool get hasManualHemisphereOverride => _hasManualHemisphereOverride;
+  final Set<RouteSeason> _selectedSeasons = <RouteSeason>{};
+  Set<RouteSeason> get selectedSeasons => Set<RouteSeason>.unmodifiable(_selectedSeasons);
+
+  // Mod 4: Belirli Tarihler (Bugün ve ileri tarihler)
+  DateTimeRange? _customDateRange;
+  DateTime? _specificPendingStartDate;
+  DateTime? get specificPendingStartDate => _specificPendingStartDate;
+  DateTimeRange? get customDateRange =>
+      _dateMode == RouteDateMode.instantTrip ? _instantTripRange : _customDateRange;
+  DateTimeRange? get specificDateRange => _customDateRange;
+
+  bool _isBudgetEnabled = true;
   bool get isBudgetEnabled => _isBudgetEnabled;
 
-  RouteBudgetCurrency _currency = RouteBudgetCurrency.tryCurrency;
-  RouteBudgetCurrency get currency => _currency;
+  String _userCurrencyCode = 'TRY';
+  String get userCurrencyCode => _userCurrencyCode;
+  String get secondaryCurrencyCode => 'USD';
 
-  double _minBudget = 0;
-  double _maxBudget = 35000;
+  RouteBudgetCurrency get currency {
+    switch (_userCurrencyCode) {
+      case 'EUR':
+        return RouteBudgetCurrency.eurCurrency;
+      case 'USD':
+        return RouteBudgetCurrency.usdCurrency;
+      default:
+        return RouteBudgetCurrency.tryCurrency;
+    }
+  }
+
+  double _minBudget = 0.0;
+  double? _maxBudget;
   double get minBudget => _minBudget;
-  double get maxBudget => _maxBudget;
+  double? get maxBudget => _maxBudget;
+  bool get isMaxBudgetOpenEnded => _maxBudget == null;
+
+  final List<String> _addedCountryCurrencyCodes = <String>[];
+  List<String> get addedCountryCurrencyCodes =>
+      List<String>.unmodifiable(_addedCountryCurrencyCodes);
 
   int _adultsCount = 2;
   int _childrenCount = 0;
   int get adultsCount => _adultsCount;
   int get childrenCount => _childrenCount;
   int get totalTravelersCount => _adultsCount + _childrenCount;
+
+  /// Fotoğrafı bulunmayan şehir ve ülke kartlarında kullanılacak yerel yer tutucu görsel.
+  static const String cityPlaceholderAsset =
+      'assets/images/city_placeholder_skyline.jpg';
 
   /// Türkçe karakter duyarlı arama normalizasyonu
   static String _normalizeTr(String input) {
@@ -184,36 +364,31 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'ES',
               name: 'İspanya',
               flagEmoji: '🇪🇸',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1543783207-ec64e4d95325?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Sevilla',
                   countryCode: 'ES',
                   countryName: 'İspanya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1558642084-fd07fae5282e?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Cadiz',
                   countryCode: 'ES',
                   countryName: 'İspanya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Madrid',
                   countryCode: 'ES',
                   countryName: 'İspanya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1539037116277-4db20889f2d4?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Barselona',
                   countryCode: 'ES',
                   countryName: 'İspanya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1583422409516-2895a77efded?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -221,43 +396,37 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'TR',
               name: 'Türkiye',
               flagEmoji: '🇹🇷',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'İstanbul',
                   countryCode: 'TR',
                   countryName: 'Türkiye',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'İzmir',
                   countryCode: 'TR',
                   countryName: 'Türkiye',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Ankara',
                   countryCode: 'TR',
                   countryName: 'Türkiye',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1569383746724-6f1b882b8f46?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Fethiye',
                   countryCode: 'TR',
                   countryName: 'Türkiye',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1533105079780-92b9be482077?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Marmaris',
                   countryCode: 'TR',
                   countryName: 'Türkiye',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -265,29 +434,25 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'FR',
               name: 'Fransa',
               flagEmoji: '🇫🇷',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Paris',
                   countryCode: 'FR',
                   countryName: 'Fransa',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Lyon',
                   countryCode: 'FR',
                   countryName: 'Fransa',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1524396309943-e03f5249f002?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Marsilya',
                   countryCode: 'FR',
                   countryName: 'Fransa',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1565019011521-b0575cbb57c9?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -295,29 +460,25 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'GB',
               name: 'İngiltere',
               flagEmoji: '🇬🇧',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Londra',
                   countryCode: 'GB',
                   countryName: 'İngiltere',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Manchester',
                   countryCode: 'GB',
                   countryName: 'İngiltere',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1515586838455-8f8f940d6853?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'York',
                   countryCode: 'GB',
                   countryName: 'İngiltere',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1580655653885-65763b2597d0?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -325,29 +486,25 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'IT',
               name: 'İtalya',
               flagEmoji: '🇮🇹',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1516483638261-f4dbaf036963?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Roma',
                   countryCode: 'IT',
                   countryName: 'İtalya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1552832230-c0197dd311b5?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Floransa',
                   countryCode: 'IT',
                   countryName: 'İtalya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1541370976299-4d24ebbc9077?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Venedik',
                   countryCode: 'IT',
                   countryName: 'İtalya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1514890547357-a9ee288728e0?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -355,22 +512,19 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'BE',
               name: 'Belçika',
               flagEmoji: '🇧🇪',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1491557345352-5929e343eb89?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Brugge',
                   countryCode: 'BE',
                   countryName: 'Belçika',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1491557345352-5929e343eb89?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Brüksel',
                   countryCode: 'BE',
                   countryName: 'Belçika',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1559113202-c916b8e44373?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -378,22 +532,19 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'NL',
               name: 'Hollanda',
               flagEmoji: '🇳🇱',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1512470876302-972faa2aa9a4?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Amsterdam',
                   countryCode: 'NL',
                   countryName: 'Hollanda',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1512470876302-972faa2aa9a4?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Rotterdam',
                   countryCode: 'NL',
                   countryName: 'Hollanda',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1543783207-ec64e4d95325?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -411,22 +562,19 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'CZ',
               name: 'Çekya',
               flagEmoji: '🇨🇿',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1541849546-216549ae216d?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Prag',
                   countryCode: 'CZ',
                   countryName: 'Çekya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1541849546-216549ae216d?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Cesky Krumlov',
                   countryCode: 'CZ',
                   countryName: 'Çekya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -434,22 +582,19 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'HU',
               name: 'Macaristan',
               flagEmoji: '🇭🇺',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Budapeşte',
                   countryCode: 'HU',
                   countryName: 'Macaristan',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Estergon',
                   countryCode: 'HU',
                   countryName: 'Macaristan',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1516483638261-f4dbaf036963?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -457,22 +602,19 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'PL',
               name: 'Polonya',
               flagEmoji: '🇵🇱',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1519197924294-4ba991a11128?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Krakov',
                   countryCode: 'PL',
                   countryName: 'Polonya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1519197924294-4ba991a11128?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Varşova',
                   countryCode: 'PL',
                   countryName: 'Polonya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1607427293702-036933bbf746?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -490,29 +632,25 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'NO',
               name: 'Norveç',
               flagEmoji: '🇳🇴',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1509356843151-3e7d96241e11?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Oslo',
                   countryCode: 'NO',
                   countryName: 'Norveç',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1509356843151-3e7d96241e11?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Bergen',
                   countryCode: 'NO',
                   countryName: 'Norveç',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1516483638261-f4dbaf036963?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Tromsø',
                   countryCode: 'NO',
                   countryName: 'Norveç',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1517411032315-54ef2cb783bb?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -520,22 +658,19 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'SE',
               name: 'İsveç',
               flagEmoji: '🇸🇪',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1509356843151-3e7d96241e11?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Stockholm',
                   countryCode: 'SE',
                   countryName: 'İsveç',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1509356843151-3e7d96241e11?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Göteborg',
                   countryCode: 'SE',
                   countryName: 'İsveç',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -561,29 +696,25 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'JP',
               name: 'Japonya',
               flagEmoji: '🇯🇵',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Tokyo',
                   countryCode: 'JP',
                   countryName: 'Japonya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Kyoto',
                   countryCode: 'JP',
                   countryName: 'Japonya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Osaka',
                   countryCode: 'JP',
                   countryName: 'Japonya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1590559899731-a382839e5549?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -591,29 +722,25 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'RU',
               name: 'Rusya',
               flagEmoji: '🇷🇺',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1513326738677-b964603b136d?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Moskova',
                   countryCode: 'RU',
                   countryName: 'Rusya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1513326738677-b964603b136d?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'St. Petersburg',
                   countryCode: 'RU',
                   countryName: 'Rusya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1556610961-2fecc5927173?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Kazan',
                   countryCode: 'RU',
                   countryName: 'Rusya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1547448415-e9f5b28e570d?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -629,29 +756,25 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'TH',
               name: 'Tayland',
               flagEmoji: '🇹🇭',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1552465011-b4e21bf6e79a?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Phuket',
                   countryCode: 'TH',
                   countryName: 'Tayland',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1589394815804-964ed0be2eb5?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Bangkok',
                   countryCode: 'TH',
                   countryName: 'Tayland',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1508009603885-50cf7c579365?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Chiang Mai',
                   countryCode: 'TH',
                   countryName: 'Tayland',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1552465011-b4e21bf6e79a?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -677,29 +800,25 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'MA',
               name: 'Fas',
               flagEmoji: '🇲🇦',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1539020140153-e479b8c22e70?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Marakeş',
                   countryCode: 'MA',
                   countryName: 'Fas',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1539020140153-e479b8c22e70?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Kazablanka',
                   countryCode: 'MA',
                   countryName: 'Fas',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1548013146-72479768bada?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Şafşavan',
                   countryCode: 'MA',
                   countryName: 'Fas',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1553899017-90b83090a15c?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -715,22 +834,20 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'ZA',
               name: 'Güney Afrika',
               flagEmoji: '🇿🇦',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1580060839134-75a5edca2e99?auto=format&fit=crop&w=700&q=80',
+              hemisphere: GeographyHemisphere.southern,
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Cape Town',
                   countryCode: 'ZA',
                   countryName: 'Güney Afrika',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1580060839134-75a5edca2e99?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Johannesburg',
                   countryCode: 'ZA',
                   countryName: 'Güney Afrika',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1577948000111-9c970dfe3743?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -756,29 +873,25 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'US',
               name: 'ABD',
               flagEmoji: '🇺🇸',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1485738422979-f5c462d49f74?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'New York',
                   countryCode: 'US',
                   countryName: 'ABD',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1485738422979-f5c462d49f74?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'San Francisco',
                   countryCode: 'US',
                   countryName: 'ABD',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Los Angeles',
                   countryCode: 'US',
                   countryName: 'ABD',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1534190760961-74e8c1c5c3da?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -786,29 +899,25 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'CA',
               name: 'Kanada',
               flagEmoji: '🇨🇦',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1503614472-8c93d56e92ce?auto=format&fit=crop&w=700&q=80',
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Toronto',
                   countryCode: 'CA',
                   countryName: 'Kanada',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1517090504586-fde19ea6066f?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Vancouver',
                   countryCode: 'CA',
                   countryName: 'Kanada',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1503614472-8c93d56e92ce?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Montreal',
                   countryCode: 'CA',
                   countryName: 'Kanada',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1519178614-68673b201f36?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -834,29 +943,26 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'AU',
               name: 'Avustralya',
               flagEmoji: '🇦🇺',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?auto=format&fit=crop&w=700&q=80',
+              hemisphere: GeographyHemisphere.southern,
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Sidney',
                   countryCode: 'AU',
                   countryName: 'Avustralya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Melbourne',
                   countryCode: 'AU',
                   countryName: 'Avustralya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1514395462725-fb4566210144?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Brisbane',
                   countryCode: 'AU',
                   countryName: 'Avustralya',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1523482580672-f109ba8cb9be?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -864,29 +970,26 @@ class RouteBuilderViewModel extends ChangeNotifier
               code: 'NZ',
               name: 'Yeni Zelanda',
               flagEmoji: '🇳🇿',
-              imageUrl:
-                  'https://images.unsplash.com/photo-1507699622108-4be3abd695ad?auto=format&fit=crop&w=700&q=80',
+              hemisphere: GeographyHemisphere.southern,
+              imageUrl: '',
               cities: [
                 BuilderCityCatalogItem(
                   name: 'Queenstown',
                   countryCode: 'NZ',
                   countryName: 'Yeni Zelanda',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1507699622108-4be3abd695ad?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Auckland',
                   countryCode: 'NZ',
                   countryName: 'Yeni Zelanda',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
                 BuilderCityCatalogItem(
                   name: 'Wellington',
                   countryCode: 'NZ',
                   countryName: 'Yeni Zelanda',
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1469521669194-babb45599def?auto=format&fit=crop&w=600&q=80',
+                  imageUrl: '',
                 ),
               ],
             ),
@@ -899,10 +1002,158 @@ class RouteBuilderViewModel extends ChangeNotifier
   static String cityKey(String countryCode, String cityName) =>
       '$countryCode:$cityName';
 
+  static String _canonicalContinentId(ContinentFilter filter, String rawCode) {
+    switch (filter) {
+      case ContinentFilter.europe:
+        return 'europe';
+      case ContinentFilter.asia:
+        return 'asia';
+      case ContinentFilter.africa:
+        return 'africa';
+      case ContinentFilter.northAmerica:
+        return 'north_america';
+      case ContinentFilter.southAmerica:
+        return 'south_america';
+      case ContinentFilter.oceania:
+        return 'oceania';
+      case ContinentFilter.global:
+        return rawCode.trim().toLowerCase();
+    }
+  }
+
+  static String _sanitizeLocationImageUrl(String rawUrl) {
+    final trimmed = rawUrl.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+    if (trimmed.toLowerCase().contains('images.unsplash.com')) {
+      return '';
+    }
+    return trimmed;
+  }
+
+  static BuilderCountryCatalogItem _mapCountryNodeToBuilder(
+    GeographyCountryNode country,
+    String lang,
+  ) {
+    final countryName = country.localizedName(lang).isNotEmpty
+        ? country.localizedName(lang)
+        : country.name;
+    final mappedCities = country.cities.map((city) {
+      final cityName = city.localizedName(lang).isNotEmpty
+          ? city.localizedName(lang)
+          : city.name;
+      return BuilderCityCatalogItem(
+        name: cityName,
+        countryCode: country.code,
+        countryName: countryName,
+        imageUrl: _sanitizeLocationImageUrl(city.imageUrl),
+      );
+    }).toList(growable: false);
+
+    var resolvedCountryImage = _sanitizeLocationImageUrl(country.imageUrl);
+    if (resolvedCountryImage.isEmpty) {
+      for (final city in mappedCities) {
+        if (city.imageUrl.trim().isNotEmpty) {
+          resolvedCountryImage = city.imageUrl;
+          break;
+        }
+      }
+    }
+
+    return BuilderCountryCatalogItem(
+      code: country.code,
+      name: countryName,
+      flagEmoji: country.flagEmoji,
+      imageUrl: resolvedCountryImage,
+      hemisphere: country.hemisphere,
+      currencyCode: country.currencyCode,
+      currencySymbol: country.currencySymbol,
+      currencyNameTr: country.currencyNameTr,
+      cities: mappedCities,
+    );
+  }
+
+  /// Yüklü `GeographyStore` varsa DB coğrafya ağacını, aksi halde statik kataloğu döndürür.
+  @protected
+  List<BuilderContinentCatalogItem> get activeContinentsCatalog {
+    final store = _geographyStore;
+    if (store == null || !store.hasLoaded || store.continents.isEmpty) {
+      return continentsCatalog;
+    }
+
+    final lang = store.lang;
+    return store.continents.map((continentNode) {
+      final continentId = _canonicalContinentId(
+        continentNode.continentFilter,
+        continentNode.code,
+      );
+      final continentName = continentNode.localizedName(lang).isNotEmpty
+          ? continentNode.localizedName(lang)
+          : continentNode.name;
+
+      final countriesByCode = <String, GeographyCountryNode>{
+        for (final country in continentNode.countries)
+          country.code.toUpperCase(): country,
+      };
+      final assignedCodes = <String>{};
+
+      final subRegions = <BuilderSubRegionCatalogItem>[];
+      for (final regionNode in continentNode.regions) {
+        final regionId =
+            regionNode.id.isNotEmpty ? regionNode.id : regionNode.code;
+        final regionName = regionNode.localizedName(lang).isNotEmpty
+            ? regionNode.localizedName(lang)
+            : regionNode.name;
+        final regionCountries = <BuilderCountryCatalogItem>[];
+        for (final rawCode in regionNode.countryCodes) {
+          final upperCode = rawCode.trim().toUpperCase();
+          final countryNode = countriesByCode[upperCode];
+          if (countryNode != null) {
+            assignedCodes.add(upperCode);
+            regionCountries.add(_mapCountryNodeToBuilder(countryNode, lang));
+          }
+        }
+        subRegions.add(
+          BuilderSubRegionCatalogItem(
+            id: regionId,
+            name: regionName,
+            imageUrl: regionNode.imageUrl,
+            countries: regionCountries,
+          ),
+        );
+      }
+
+      final unassignedCountries = continentNode.countries
+          .where((c) => !assignedCodes.contains(c.code.toUpperCase()))
+          .map((c) => _mapCountryNodeToBuilder(c, lang))
+          .toList(growable: false);
+      if (unassignedCountries.isNotEmpty) {
+        subRegions.add(
+          BuilderSubRegionCatalogItem(
+            id: continentNode.regions.isEmpty
+                ? '${continentId}_all'
+                : '${continentId}_other',
+            name: continentNode.regions.isEmpty ? continentName : 'Diğer',
+            imageUrl: continentNode.imageUrl,
+            countries: unassignedCountries,
+          ),
+        );
+      }
+
+      return BuilderContinentCatalogItem(
+        id: continentId,
+        name: continentName,
+        imageUrl: continentNode.imageUrl,
+        subRegions: subRegions,
+      );
+    }).toList(growable: false);
+  }
+
   /// Aktif seçili kıta objesi (Null ise tüm dünyayı listeler)
   BuilderContinentCatalogItem? get activeContinent {
     if (_activeContinentId == null) return null;
-    for (final c in continentsCatalog) {
+    for (final c in activeContinentsCatalog) {
       if (c.id == _activeContinentId) return c;
     }
     return null;
@@ -993,6 +1244,13 @@ class RouteBuilderViewModel extends ChangeNotifier
   // BeenHereSearchFilterController SÖZLEŞMESİ
   // ===========================================================================
 
+  @override
+  Future<void> triggerRemoteGeographySearch(String query) async {
+    final store = _geographyStore;
+    if (store == null || (store.hasLoaded && store.tree != null)) return;
+    await store.searchRemote(query, lang: store.lang);
+  }
+
   static ContinentFilter _mapContinentId(String id) {
     switch (id) {
       case 'europe':
@@ -1016,7 +1274,7 @@ class RouteBuilderViewModel extends ChangeNotifier
     BuilderContinentCatalogItem continent,
     BuilderSubRegionCatalogItem subRegion,
   })? _findLocationForCountry(String countryCode) {
-    for (final continent in continentsCatalog) {
+    for (final continent in activeContinentsCatalog) {
       for (final subRegion in continent.subRegions) {
         for (final country in subRegion.countries) {
           if (country.code == countryCode) {
@@ -1044,7 +1302,7 @@ class RouteBuilderViewModel extends ChangeNotifier
 
   @override
   List<RouteContinentCatalogItem> get searchContinentsCatalog {
-    return continentsCatalog.map((c) {
+    return activeContinentsCatalog.map((c) {
       final continentFilter = _mapContinentId(c.id);
       return RouteContinentCatalogItem(
         continent: continentFilter,
@@ -1068,9 +1326,9 @@ class RouteBuilderViewModel extends ChangeNotifier
 
   @override
   int countItemsForContinent(ContinentFilter continent) {
-    for (final c in continentsCatalog) {
+    for (final c in activeContinentsCatalog) {
       if (_mapContinentId(c.id) == continent) {
-        return c.allCountries.length;
+        return c.allCountries.map((country) => country.code).toSet().length;
       }
     }
     return 0;
@@ -1078,7 +1336,7 @@ class RouteBuilderViewModel extends ChangeNotifier
 
   @override
   int countItemsForRegion(RouteRegionCatalogItem region) {
-    for (final c in continentsCatalog) {
+    for (final c in activeContinentsCatalog) {
       for (final sr in c.subRegions) {
         if (sr.id == region.id) {
           return sr.countries.length;
@@ -1093,6 +1351,17 @@ class RouteBuilderViewModel extends ChangeNotifier
 
   @override
   List<RouteSearchSuggestion> buildSearchSuggestions(String query) {
+    final store = _geographyStore;
+    if (store != null && store.hasLoaded) {
+      final dbSuggestions = store.buildSearchSuggestions(
+        query,
+        lang: store.lang,
+      );
+      if (dbSuggestions.isNotEmpty) {
+        return dbSuggestions;
+      }
+    }
+
     final trimmed = query.trim();
     final q = _normalizeTr(trimmed);
 
@@ -1182,9 +1451,10 @@ class RouteBuilderViewModel extends ChangeNotifier
 
     final seenCityIds = <String>{};
     final seenCountryCodes = <String>{};
+    final catalog = activeContinentsCatalog;
 
     // 1. Eşleşen şehirler
-    for (final continent in continentsCatalog) {
+    for (final continent in catalog) {
       for (final subRegion in continent.subRegions) {
         for (final country in subRegion.countries) {
           for (final city in country.cities) {
@@ -1212,7 +1482,7 @@ class RouteBuilderViewModel extends ChangeNotifier
     }
 
     // 2. Eşleşen ülkeler
-    for (final continent in continentsCatalog) {
+    for (final continent in catalog) {
       for (final subRegion in continent.subRegions) {
         for (final country in subRegion.countries) {
           if ((_normalizeTr(country.name).contains(q) ||
@@ -1238,7 +1508,7 @@ class RouteBuilderViewModel extends ChangeNotifier
     }
 
     // 3. Eşleşen alt bölgeler ve kıtalar
-    for (final continent in continentsCatalog) {
+    for (final continent in catalog) {
       final continentFilter = _mapContinentId(continent.id);
       for (final subRegion in continent.subRegions) {
         if (_normalizeTr(subRegion.name).contains(q)) {
@@ -1285,9 +1555,11 @@ class RouteBuilderViewModel extends ChangeNotifier
     _filterPills.clear();
     final seenIds = <String>{};
     for (final pill in pills) {
-      if (seenIds.add(pill.id)) {
-        _filterPills.add(pill);
+      if (!seenIds.add(pill.id)) continue;
+      if (pill.type == RouteFilterPillType.keyword) {
+        _filterPills.removeWhere((p) => p.type == RouteFilterPillType.keyword);
       }
+      _filterPills.add(pill);
     }
     notifyListeners();
   }
@@ -1365,51 +1637,136 @@ class RouteBuilderViewModel extends ChangeNotifier
       case RouteFilterPillType.country:
         return pill.countryCode != null && country.code == pill.countryCode;
       case RouteFilterPillType.city:
+      case RouteFilterPillType.district:
       case RouteFilterPillType.keyword:
         return false;
     }
+  }
+
+  GeographyCityNode? _findCityNode(String countryCode, String cityName) {
+    final store = _geographyStore;
+    if (store == null || !store.hasLoaded) return null;
+    final normTarget = _normalizeTr(cityName);
+    for (final city in store.getCityNodesForCountry(countryCode)) {
+      if (_normalizeTr(city.localizedName(store.lang)) == normTarget ||
+          _normalizeTr(city.name) == normTarget) {
+        return city;
+      }
+    }
+    return null;
+  }
+
+  bool _countryOrAncestorsMatchQuery(
+    BuilderCountryCatalogItem country,
+    String normalizedQuery,
+  ) {
+    final loc = _findLocationForCountry(country.code);
+    if (_normalizeTr(country.name).contains(normalizedQuery) ||
+        _normalizeTr(country.code) == normalizedQuery ||
+        (loc != null &&
+            (_normalizeTr(loc.subRegion.name).contains(normalizedQuery) ||
+                _normalizeTr(loc.continent.name).contains(normalizedQuery)))) {
+      return true;
+    }
+
+    final store = _geographyStore;
+    if (store == null || !store.hasLoaded) return false;
+
+    if (store.findCountry(country.code)?.matchesQuery(
+          normalizedQuery,
+          _normalizeTr,
+        ) ??
+        false) {
+      return true;
+    }
+    if (loc != null) {
+      if (store.findRegion(loc.subRegion.id)?.matchesQuery(
+            normalizedQuery,
+            _normalizeTr,
+          ) ??
+          false) {
+        return true;
+      }
+      if (store
+              .findContinent(_mapContinentId(loc.continent.id))
+              ?.matchesQuery(normalizedQuery, _normalizeTr) ??
+          false) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _cityMatchesQuery(
+    BuilderCityCatalogItem city,
+    String normalizedQuery,
+  ) {
+    if (_normalizeTr(city.name).contains(normalizedQuery)) return true;
+    return _findCityNode(city.countryCode, city.name)?.matchesQuery(
+          normalizedQuery,
+          _normalizeTr,
+        ) ??
+        false;
   }
 
   bool _cityMatchesCityPill(
     BuilderCityCatalogItem city,
     RouteFeedFilterPill pill,
   ) {
-    if (pill.type != RouteFilterPillType.city) return false;
+    if (pill.type != RouteFilterPillType.city &&
+        pill.type != RouteFilterPillType.district) {
+      return false;
+    }
     final target = _normalizeTr(pill.cityName ?? '');
     if (target.isEmpty) return false;
     final countryOk =
         pill.countryCode == null || pill.countryCode == city.countryCode;
-    return countryOk && _normalizeTr(city.name) == target;
+    if (!countryOk) return false;
+    if (_normalizeTr(city.name) == target) return true;
+    final cityNode = _findCityNode(city.countryCode, city.name);
+    if (cityNode == null) return false;
+    if (_normalizeTr(cityNode.name) == target ||
+        _normalizeTr(cityNode.defaultName) == target) {
+      return true;
+    }
+    return cityNode.nameTranslations.values
+        .any((translated) => _normalizeTr(translated) == target);
   }
 
   /// Alt tarafta satır satır ([Ülke] -> [Şehir1] [Şehir2] [Şehir3]) listelenecek ülkeler
   List<BuilderCountryCatalogItem> get displayedCountries {
-    List<BuilderCountryCatalogItem> source;
+    final catalog = activeContinentsCatalog;
+    List<BuilderCountryCatalogItem> rawSource;
 
     if (_activeContinentId == null) {
       // 1. Kıta seçili değil: Tüm kıtalardaki ülkeler listelenir
-      source = [
-        for (final c in continentsCatalog) ...c.allCountries,
+      rawSource = [
+        for (final c in catalog) ...c.allCountries,
       ];
     } else if (_activeSubRegionId == null) {
       // 2. Kıta seçili ama alt bölge seçili değil: o kıtanın tüm ülkeleri
       final cont = activeContinent;
-      source = cont != null
+      rawSource = cont != null
           ? cont.allCountries
-          : [for (final c in continentsCatalog) ...c.allCountries];
+          : [for (final c in catalog) ...c.allCountries];
     } else {
       // 3. Hem kıta hem alt bölge seçili: o alt bölgenin ülkeleri
       final cont = activeContinent;
-      if (cont != null) {
+      if (cont != null && cont.subRegions.isNotEmpty) {
         final sub = cont.subRegions.firstWhere(
           (sr) => sr.id == _activeSubRegionId,
           orElse: () => cont.subRegions.first,
         );
-        source = sub.countries;
+        rawSource = sub.countries;
       } else {
-        source = [for (final c in continentsCatalog) ...c.allCountries];
+        rawSource = [for (final c in catalog) ...c.allCountries];
       }
     }
+
+    final seenCodes = <String>{};
+    final source = rawSource
+        .where((country) => seenCodes.add(country.code))
+        .toList(growable: false);
 
     final enabledPills = _filterPills.where((p) => p.isEnabled).toList();
     final locationPills = enabledPills
@@ -1434,19 +1791,14 @@ class RouteBuilderViewModel extends ChangeNotifier
       }
 
       if (keywordPills.isNotEmpty) {
-        final loc = _findLocationForCountry(country.code);
         final displayedCities = getDisplayedCitiesForCountry(country);
         for (final pill in keywordPills) {
           final kw = _normalizeTr(pill.keyword ?? pill.label);
           if (kw.isEmpty) continue;
           final matchesCountryOrRegion =
-              _normalizeTr(country.name).contains(kw) ||
-                  _normalizeTr(country.code) == kw ||
-                  (loc != null &&
-                      (_normalizeTr(loc.subRegion.name).contains(kw) ||
-                          _normalizeTr(loc.continent.name).contains(kw)));
-          final matchesDisplayedCity = displayedCities
-              .any((city) => _normalizeTr(city.name).contains(kw));
+              _countryOrAncestorsMatchQuery(country, kw);
+          final matchesDisplayedCity =
+              displayedCities.any((city) => _cityMatchesQuery(city, kw));
           if (!matchesCountryOrRegion && !matchesDisplayedCity) {
             return false;
           }
@@ -1454,12 +1806,12 @@ class RouteBuilderViewModel extends ChangeNotifier
       }
 
       if (_searchFilterQuery.isNotEmpty) {
-        final countryMatch =
-            _normalizeTr(country.name).contains(_searchFilterQuery);
+        final countryOrRegionMatch =
+            _countryOrAncestorsMatchQuery(country, _searchFilterQuery);
         final cityMatch = country.cities.any(
-          (city) => _normalizeTr(city.name).contains(_searchFilterQuery),
+          (city) => _cityMatchesQuery(city, _searchFilterQuery),
         );
-        if (!countryMatch && !cityMatch) {
+        if (!countryOrRegionMatch && !cityMatch) {
           return false;
         }
       }
@@ -1489,7 +1841,11 @@ class RouteBuilderViewModel extends ChangeNotifier
       );
       if (!matchesWholeCountry) {
         final cityPills = locationPills
-            .where((p) => p.type == RouteFilterPillType.city)
+            .where(
+              (p) =>
+                  p.type == RouteFilterPillType.city ||
+                  p.type == RouteFilterPillType.district,
+            )
             .toList();
         cities = cities
             .where(
@@ -1501,28 +1857,19 @@ class RouteBuilderViewModel extends ChangeNotifier
     }
 
     if (keywordPills.isNotEmpty) {
-      final loc = _findLocationForCountry(country.code);
       for (final pill in keywordPills) {
         final kw = _normalizeTr(pill.keyword ?? pill.label);
         if (kw.isEmpty) continue;
-        final matchesCountryOrRegion =
-            _normalizeTr(country.name).contains(kw) ||
-                _normalizeTr(country.code) == kw ||
-                (loc != null &&
-                    (_normalizeTr(loc.subRegion.name).contains(kw) ||
-                        _normalizeTr(loc.continent.name).contains(kw)));
-        if (!matchesCountryOrRegion) {
-          cities = cities
-              .where((city) => _normalizeTr(city.name).contains(kw))
-              .toList();
+        if (!_countryOrAncestorsMatchQuery(country, kw)) {
+          cities = cities.where((city) => _cityMatchesQuery(city, kw)).toList();
         }
       }
     }
 
     if (_searchFilterQuery.isNotEmpty &&
-        !_normalizeTr(country.name).contains(_searchFilterQuery)) {
+        !_countryOrAncestorsMatchQuery(country, _searchFilterQuery)) {
       cities = cities
-          .where((city) => _normalizeTr(city.name).contains(_searchFilterQuery))
+          .where((city) => _cityMatchesQuery(city, _searchFilterQuery))
           .toList();
     }
 
@@ -1563,6 +1910,7 @@ class RouteBuilderViewModel extends ChangeNotifier
     } else {
       _selectedCountryCodes.add(country.code);
     }
+    _syncRecommendedHemisphere();
     notifyListeners();
   }
 
@@ -1575,6 +1923,7 @@ class RouteBuilderViewModel extends ChangeNotifier
       _selectedCityKeys.add(key);
       _selectedCountryCodes.add(city.countryCode);
     }
+    _syncRecommendedHemisphere();
     notifyListeners();
   }
 
@@ -1594,6 +1943,7 @@ class RouteBuilderViewModel extends ChangeNotifier
         _selectedCityKeys.add(cityKey(country.code, c.name));
       }
     }
+    _syncRecommendedHemisphere();
     notifyListeners();
   }
 
@@ -1613,6 +1963,7 @@ class RouteBuilderViewModel extends ChangeNotifier
         }
       }
     }
+    _syncRecommendedHemisphere();
     notifyListeners();
   }
 
@@ -1672,6 +2023,7 @@ class RouteBuilderViewModel extends ChangeNotifier
         }
       }
     }
+    _syncRecommendedHemisphere();
     notifyListeners();
   }
 
@@ -1684,6 +2036,9 @@ class RouteBuilderViewModel extends ChangeNotifier
   void clearAllDestinationSelections() {
     _selectedCountryCodes.clear();
     _selectedCityKeys.clear();
+    _addedCountryCurrencyCodes.clear();
+    _hasManualHemisphereOverride = false;
+    _syncRecommendedHemisphere();
     notifyListeners();
   }
 
@@ -1719,55 +2074,1134 @@ class RouteBuilderViewModel extends ChangeNotifier
 
   // --- Tarih & Bütçe & Ziyaretçi Yardımcıları ---
 
+  static const List<String> turkishMonthNames = <String>[
+    'Ocak',
+    'Şubat',
+    'Mart',
+    'Nisan',
+    'Mayıs',
+    'Haziran',
+    'Temmuz',
+    'Ağustos',
+    'Eylül',
+    'Ekim',
+    'Kasım',
+    'Aralık',
+  ];
+
+  static const List<String> turkishShortMonthNames = <String>[
+    'Oca',
+    'Şub',
+    'Mar',
+    'Nis',
+    'May',
+    'Haz',
+    'Tem',
+    'Ağu',
+    'Eyl',
+    'Eki',
+    'Kas',
+    'Ara',
+  ];
+
+  DateTime get _today {
+    final now = _clock();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  DateTime get todayDate => _today;
+
+  static String formatMonthYear(DateTime month) {
+    return '${turkishMonthNames[month.month - 1]} ${month.year}';
+  }
+
+  static String formatIsoDate(DateTime date) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  static String _truncate(String value, int maxLen) {
+    if (value.length <= maxLen) return value;
+    return value.substring(0, maxLen).trimRight();
+  }
+
   void setDateMode(RouteDateMode mode) {
     _dateMode = mode;
+    if (mode == RouteDateMode.seasons && !_hasManualHemisphereOverride) {
+      _syncRecommendedHemisphere();
+    }
+    notifyListeners();
+  }
+
+  void openDateModeSubView(RouteDateMode mode) {
+    _dateMode = mode;
+    _instantTripValidationError = null;
+    switch (mode) {
+      case RouteDateMode.flexible:
+        _dateSubView = RouteDateSubView.flexibleMonths;
+        break;
+      case RouteDateMode.instantTrip:
+        _instantTripPendingDate = null;
+        _dateSubView = RouteDateSubView.instantCalendar;
+        break;
+      case RouteDateMode.seasons:
+        if (!_hasManualHemisphereOverride) {
+          _syncRecommendedHemisphere();
+        }
+        _dateSubView = RouteDateSubView.seasons;
+        break;
+      case RouteDateMode.customRange:
+        _specificPendingStartDate = null;
+        _dateSubView = RouteDateSubView.specificCalendar;
+        break;
+    }
+    notifyListeners();
+  }
+
+  void returnToDateHub() {
+    _dateSubView = RouteDateSubView.hub;
+    _instantTripPendingDate = null;
+    _instantTripValidationError = null;
+    _specificPendingStartDate = null;
+    notifyListeners();
+  }
+
+  bool get hasSelectedDateValue {
+    switch (_dateMode) {
+      case RouteDateMode.flexible:
+        return _flexibleStartMonth != null;
+      case RouteDateMode.instantTrip:
+        return _instantTripRange != null;
+      case RouteDateMode.seasons:
+        return _selectedSeasons.isNotEmpty;
+      case RouteDateMode.customRange:
+        return _customDateRange != null;
+    }
+  }
+
+  void clearDateSelection() {
+    _flexibleStartMonth = null;
+    _flexibleEndMonth = null;
+    _instantTripRange = null;
+    _instantTripPendingDate = null;
+    _instantTripValidationError = null;
+    _selectedSeasons.clear();
+    _customDateRange = null;
+    _specificPendingStartDate = null;
+    _dateMode = RouteDateMode.flexible;
+    notifyListeners();
+  }
+
+  // --- Mod 1: Esnek Tarihler (12 aylık görünüm) ---
+
+  List<DateTime> get flexibleMonthOptions {
+    final t = _today;
+    return List<DateTime>.generate(
+      12,
+      (index) => DateTime(t.year, t.month + index),
+      growable: false,
+    );
+  }
+
+  void selectFlexibleMonth(DateTime month) {
+    final normalized = DateTime(month.year, month.month);
+    _dateMode = RouteDateMode.flexible;
+    if (_flexibleStartMonth == null || _flexibleEndMonth != null) {
+      _flexibleStartMonth = normalized;
+      _flexibleEndMonth = null;
+    } else if (normalized == _flexibleStartMonth) {
+      _flexibleStartMonth = normalized;
+      _flexibleEndMonth = null;
+    } else if (normalized.isBefore(_flexibleStartMonth!)) {
+      _flexibleEndMonth = _flexibleStartMonth;
+      _flexibleStartMonth = normalized;
+    } else {
+      _flexibleEndMonth = normalized;
+    }
+    notifyListeners();
+  }
+
+  void clearFlexibleMonths() {
+    _flexibleStartMonth = null;
+    _flexibleEndMonth = null;
+    notifyListeners();
+  }
+
+  /// Hızlı esnek dönem kısayolu ("Tek Ay", "2 Aylık Dönem", "3 Aylık Dönem")
+  void applyFlexibleDurationShortcut(int monthCount) {
+    final options = flexibleMonthOptions;
+    if (options.isEmpty) return;
+    final clampedCount = monthCount.clamp(1, options.length);
+    _dateMode = RouteDateMode.flexible;
+
+    if (clampedCount == 1) {
+      _flexibleStartMonth ??= options.first;
+      _flexibleEndMonth = null;
+      notifyListeners();
+      return;
+    }
+
+    int startIdx = 0;
+    if (_flexibleStartMonth != null) {
+      final foundIdx = options.indexOf(_flexibleStartMonth!);
+      if (foundIdx >= 0) {
+        startIdx = foundIdx;
+      }
+    }
+    if (startIdx + clampedCount - 1 >= options.length) {
+      startIdx = options.length - clampedCount;
+    }
+
+    _flexibleStartMonth = options[startIdx];
+    _flexibleEndMonth = options[startIdx + clampedCount - 1];
+    notifyListeners();
+  }
+
+  String get formattedFlexiblePeriod {
+    final start = _flexibleStartMonth;
+    if (start == null) return '';
+    final end = _flexibleEndMonth;
+    if (end == null || end == start) {
+      return formatMonthYear(start);
+    }
+    return '${formatMonthYear(start)} - ${formatMonthYear(end)}';
+  }
+
+  // --- Mod 2: Anlık Gezi (Bugünü kapsama zorunluluğu) ---
+
+  List<DateTime> get instantCalendarMonths {
+    final t = _today;
+    final minDate = t.subtract(const Duration(days: 14));
+    final firstMonth = DateTime(minDate.year, minDate.month);
+    final lastMonth = DateTime(t.year, t.month + 6);
+    final totalMonths = (lastMonth.year - firstMonth.year) * 12 +
+        (lastMonth.month - firstMonth.month) +
+        1;
+    return List<DateTime>.generate(
+      totalMonths,
+      (i) => DateTime(firstMonth.year, firstMonth.month + i),
+      growable: false,
+    );
+  }
+
+  bool isDateRangeIncludingToday(DateTimeRange range) {
+    final s = DateTime(range.start.year, range.start.month, range.start.day);
+    final e = DateTime(range.end.year, range.end.month, range.end.day);
+    return !s.isAfter(_today) && !e.isBefore(_today);
+  }
+
+  bool validateAndSetInstantTripRange(DateTimeRange range) {
+    final s = DateTime(range.start.year, range.start.month, range.start.day);
+    final e = DateTime(range.end.year, range.end.month, range.end.day);
+    final ordered = s.isAfter(e)
+        ? DateTimeRange(start: e, end: s)
+        : DateTimeRange(start: s, end: e);
+
+    _dateMode = RouteDateMode.instantTrip;
+    _instantTripPendingDate = null;
+
+    if (!isDateRangeIncludingToday(ordered)) {
+      _instantTripValidationError =
+          'Anlık gezi için seçilen tarih aralığı bugünü kapsamalıdır.';
+      notifyListeners();
+      return false;
+    }
+
+    _instantTripRange = ordered;
+    _instantTripValidationError = null;
+    notifyListeners();
+    return true;
+  }
+
+  void selectInstantTripDay(DateTime day) {
+    final d = DateTime(day.year, day.month, day.day);
+    final t = _today;
+    _dateMode = RouteDateMode.instantTrip;
+
+    if (_instantTripPendingDate == null) {
+      _instantTripPendingDate = d;
+      _instantTripValidationError = null;
+      if (d == t) {
+        _instantTripRange = DateTimeRange(start: d, end: d);
+      } else {
+        _instantTripRange = null;
+      }
+      notifyListeners();
+      return;
+    }
+
+    final first = _instantTripPendingDate!;
+    final ordered = d.isBefore(first)
+        ? DateTimeRange(start: d, end: first)
+        : DateTimeRange(start: first, end: d);
+    validateAndSetInstantTripRange(ordered);
+  }
+
+  void clearInstantTripRange() {
+    _instantTripRange = null;
+    _instantTripPendingDate = null;
+    _instantTripValidationError = null;
+    notifyListeners();
+  }
+
+  /// `CalendarDatePicker2` (`CalendarDatePicker2Type.range`) callback adaptörü: Anlık Gezi
+  ///
+  /// Tek gün `[d]` geldiğinde `d == today` ise doğrudan `[today, today]` olarak onaylar;
+  /// `d != today` ise `instantTripPendingDate = d` olarak bekletir.
+  /// İki gün `[d1, d2]` geldiğinde bugünü kapsayıp kapsamadığını doğrular;
+  /// kapsamıyorsa `instantTripValidationError` ayarlanır ve aralık reddedilir.
+  void applyInstantTripCalendarDates(List<DateTime?> dates) {
+    final normalized = dates
+        .whereType<DateTime>()
+        .map((d) => DateTime(d.year, d.month, d.day))
+        .toList(growable: false)
+      ..sort();
+
+    if (normalized.isEmpty) {
+      clearInstantTripRange();
+      return;
+    }
+
+    _dateMode = RouteDateMode.instantTrip;
+    if (normalized.length == 1) {
+      final d = normalized.first;
+      _instantTripPendingDate = d;
+      _instantTripValidationError = null;
+      if (d == _today) {
+        _instantTripRange = DateTimeRange(start: d, end: d);
+      } else {
+        _instantTripRange = null;
+      }
+      notifyListeners();
+      return;
+    }
+
+    final range = DateTimeRange(start: normalized.first, end: normalized.last);
+    validateAndSetInstantTripRange(range);
+  }
+
+  DateTimeRange instantTodayRange() => DateTimeRange(start: _today, end: _today);
+
+  DateTimeRange instantLastDaysRange(int days) {
+    final count = days < 1 ? 1 : days;
+    return DateTimeRange(
+      start: _today.subtract(Duration(days: count - 1)),
+      end: _today,
+    );
+  }
+
+  DateTimeRange instantThisWeekRange() {
+    final t = _today;
+    final monday = t.subtract(Duration(days: t.weekday - DateTime.monday));
+    final sunday = monday.add(const Duration(days: 6));
+    return DateTimeRange(start: monday, end: sunday);
+  }
+
+  void applyInstantTodayShortcut() {
+    validateAndSetInstantTripRange(instantTodayRange());
+  }
+
+  void applyInstantLastDaysShortcut(int days) {
+    validateAndSetInstantTripRange(instantLastDaysRange(days));
+  }
+
+  void applyInstantThisWeekShortcut() {
+    validateAndSetInstantTripRange(instantThisWeekRange());
+  }
+
+  // --- Mod 3: Mevsimler (Yarım Küre Algılama + Çoklu Seçim) ---
+
+  /// Seçili ülke kodları ile seçili şehirlerden türetilen benzersiz ülke kodları
+  Set<String> get selectedDestinationCountryCodes {
+    final codes = <String>{..._selectedCountryCodes};
+    for (final key in _selectedCityKeys) {
+      final idx = key.indexOf(':');
+      if (idx > 0) {
+        codes.add(key.substring(0, idx).toUpperCase());
+      }
+    }
+    return codes;
+  }
+
+  GeographyHemisphere _resolveCountryHemisphere(String countryCode) {
+    final upper = countryCode.trim().toUpperCase();
+    for (final continent in activeContinentsCatalog) {
+      for (final subRegion in continent.subRegions) {
+        for (final country in subRegion.countries) {
+          if (country.code.toUpperCase() == upper) {
+            return country.hemisphere;
+          }
+        }
+      }
+    }
+    return GeographyHemisphere.fromApi(
+      null,
+      countryCode: upper,
+      continentCode: '',
+    );
+  }
+
+  /// Seçili destinasyonlardaki ülkelerin yarım küre çoğunluğuna göre önerilen yarım küre
+  GeographyHemisphere get recommendedHemisphere {
+    int northernCount = 0;
+    int southernCount = 0;
+    for (final code in selectedDestinationCountryCodes) {
+      if (_resolveCountryHemisphere(code) == GeographyHemisphere.southern) {
+        southernCount++;
+      } else {
+        northernCount++;
+      }
+    }
+    if (southernCount > northernCount) {
+      return GeographyHemisphere.southern;
+    }
+    return GeographyHemisphere.northern;
+  }
+
+  void _syncRecommendedHemisphere() {
+    if (!_hasManualHemisphereOverride) {
+      _selectedHemisphere = recommendedHemisphere;
+    }
+  }
+
+  void setHemisphere(GeographyHemisphere hemisphere) {
+    _selectedHemisphere = hemisphere;
+    _hasManualHemisphereOverride = true;
+    notifyListeners();
+  }
+
+  void toggleSeason(RouteSeason season) {
+    _dateMode = RouteDateMode.seasons;
+    if (_selectedSeasons.contains(season)) {
+      _selectedSeasons.remove(season);
+    } else {
+      _selectedSeasons.add(season);
+    }
+    notifyListeners();
+  }
+
+  ({int startMonth, int endMonth, int startYear, int endYear})
+      seasonMonthRange(RouteSeason season, [GeographyHemisphere? hemisphere]) {
+    final hemi = hemisphere ?? _selectedHemisphere;
+    final int startMonth;
+    final int endMonth;
+    switch ((hemi, season)) {
+      case (GeographyHemisphere.northern, RouteSeason.spring):
+        startMonth = 3;
+        endMonth = 5;
+      case (GeographyHemisphere.northern, RouteSeason.summer):
+        startMonth = 6;
+        endMonth = 8;
+      case (GeographyHemisphere.northern, RouteSeason.autumn):
+        startMonth = 9;
+        endMonth = 11;
+      case (GeographyHemisphere.northern, RouteSeason.winter):
+        startMonth = 12;
+        endMonth = 2;
+      case (GeographyHemisphere.southern, RouteSeason.spring):
+        startMonth = 9;
+        endMonth = 11;
+      case (GeographyHemisphere.southern, RouteSeason.summer):
+        startMonth = 12;
+        endMonth = 2;
+      case (GeographyHemisphere.southern, RouteSeason.autumn):
+        startMonth = 3;
+        endMonth = 5;
+      case (GeographyHemisphere.southern, RouteSeason.winter):
+        startMonth = 6;
+        endMonth = 8;
+    }
+
+    final t = _today;
+    if (startMonth > endMonth) {
+      // Yıl geçişli mevsim (Aralık - Şubat)
+      if (t.month <= endMonth) {
+        return (
+          startMonth: startMonth,
+          endMonth: endMonth,
+          startYear: t.year - 1,
+          endYear: t.year,
+        );
+      }
+      return (
+        startMonth: startMonth,
+        endMonth: endMonth,
+        startYear: t.year,
+        endYear: t.year + 1,
+      );
+    }
+
+    final year = endMonth < t.month ? t.year + 1 : t.year;
+    return (
+      startMonth: startMonth,
+      endMonth: endMonth,
+      startYear: year,
+      endYear: year,
+    );
+  }
+
+  String formatSeasonMonthRange(
+    RouteSeason season, [
+    GeographyHemisphere? hemisphere,
+  ]) {
+    final range = seasonMonthRange(season, hemisphere);
+    final startName = turkishMonthNames[range.startMonth - 1];
+    final endName = turkishMonthNames[range.endMonth - 1];
+    if (range.startYear == range.endYear) {
+      return '$startName - $endName ${range.endYear}';
+    }
+    return '$startName ${range.startYear} - $endName ${range.endYear}';
+  }
+
+  String get formattedSelectedSeasonsTitle {
+    if (_selectedSeasons.isEmpty) return '';
+    final ordered = RouteSeason.values
+        .where(_selectedSeasons.contains)
+        .map((s) => s.labelTr)
+        .toList(growable: false);
+    if (ordered.length == 1) return ordered.first;
+    if (ordered.length == 2) return '${ordered[0]} ve ${ordered[1]}';
+    return '${ordered.sublist(0, ordered.length - 1).join(', ')} ve ${ordered.last}';
+  }
+
+  String get formattedSelectedSeasonRanges {
+    if (_selectedSeasons.isEmpty) return '';
+    final ordered = RouteSeason.values.where(_selectedSeasons.contains).toList()
+      ..sort((a, b) {
+        final ra = seasonMonthRange(a);
+        final rb = seasonMonthRange(b);
+        final cmpYear = ra.startYear.compareTo(rb.startYear);
+        if (cmpYear != 0) return cmpYear;
+        return ra.startMonth.compareTo(rb.startMonth);
+      });
+    return ordered.map(formatSeasonMonthRange).join(' / ');
+  }
+
+  // --- Mod 4: Belirli Tarihler (Yalnızca bugün ve ileri tarihler) ---
+
+  List<DateTime> get specificCalendarMonths {
+    final t = _today;
+    return List<DateTime>.generate(
+      12,
+      (i) => DateTime(t.year, t.month + i),
+      growable: false,
+    );
+  }
+
+  bool isSpecificDateSelectable(DateTime day) {
+    final d = DateTime(day.year, day.month, day.day);
+    return !d.isBefore(_today);
+  }
+
+  void selectSpecificDateDay(DateTime day) {
+    final d = DateTime(day.year, day.month, day.day);
+    if (d.isBefore(_today)) {
+      return;
+    }
+    _dateMode = RouteDateMode.customRange;
+    if (_specificPendingStartDate == null) {
+      _specificPendingStartDate = d;
+      _customDateRange = DateTimeRange(start: d, end: d);
+    } else {
+      final first = _specificPendingStartDate!;
+      _customDateRange = d.isBefore(first)
+          ? DateTimeRange(start: d, end: first)
+          : DateTimeRange(start: first, end: d);
+      _specificPendingStartDate = null;
+    }
+    notifyListeners();
+  }
+
+  void clearSpecificDateRange() {
+    _customDateRange = null;
+    _specificPendingStartDate = null;
     notifyListeners();
   }
 
   void setCustomDateRange(DateTimeRange range) {
-    _customDateRange = range;
+    final s = DateTime(range.start.year, range.start.month, range.start.day);
+    final e = DateTime(range.end.year, range.end.month, range.end.day);
+    if (s.isBefore(_today) || e.isBefore(_today)) {
+      return;
+    }
+    _customDateRange = s.isAfter(e)
+        ? DateTimeRange(start: e, end: s)
+        : DateTimeRange(start: s, end: e);
+    _specificPendingStartDate = null;
     _dateMode = RouteDateMode.customRange;
     notifyListeners();
+  }
+
+  /// `CalendarDatePicker2` (`CalendarDatePicker2Type.range`) callback adaptörü: Belirli Tarihler
+  void applySpecificCalendarDates(List<DateTime?> dates) {
+    final normalized = dates
+        .whereType<DateTime>()
+        .map((d) => DateTime(d.year, d.month, d.day))
+        .where((d) => !d.isBefore(_today))
+        .toList(growable: false)
+      ..sort();
+
+    if (normalized.isEmpty) {
+      clearSpecificDateRange();
+      return;
+    }
+
+    _dateMode = RouteDateMode.customRange;
+    if (normalized.length == 1) {
+      final d = normalized.first;
+      _specificPendingStartDate = d;
+      _customDateRange = DateTimeRange(start: d, end: d);
+      notifyListeners();
+      return;
+    }
+
+    _customDateRange = DateTimeRange(
+      start: normalized.first,
+      end: normalized.last,
+    );
+    _specificPendingStartDate = null;
+    notifyListeners();
+  }
+
+  DateTimeRange specificWeekendRange() {
+    final t = _today;
+    if (t.weekday == DateTime.sunday) {
+      return DateTimeRange(start: t, end: t);
+    }
+    final saturday = t.add(Duration(days: DateTime.saturday - t.weekday));
+    final sunday = saturday.add(const Duration(days: 1));
+    return DateTimeRange(start: saturday, end: sunday);
+  }
+
+  DateTimeRange specificDurationRange(int days) {
+    final count = days < 1 ? 1 : days;
+    return DateTimeRange(
+      start: _today,
+      end: _today.add(Duration(days: count - 1)),
+    );
+  }
+
+  void applySpecificWeekendShortcut() {
+    setCustomDateRange(specificWeekendRange());
+  }
+
+  void applySpecificDurationShortcut(int days) {
+    setCustomDateRange(specificDurationRange(days));
+  }
+
+  static String formatDayMonthYearShort(DateTime date) {
+    return '${date.day} ${turkishShortMonthNames[date.month - 1]} ${date.year}';
+  }
+
+  static String formatShortDateRange(DateTimeRange range) {
+    final s = DateTime(range.start.year, range.start.month, range.start.day);
+    final e = DateTime(range.end.year, range.end.month, range.end.day);
+    final days = e.difference(s).inDays + 1;
+    if (s == e) {
+      return '${s.day} ${turkishMonthNames[s.month - 1]} ${s.year}';
+    }
+    if (s.year == e.year && s.month == e.month) {
+      return '${s.day} - ${e.day} ${turkishMonthNames[e.month - 1]} ($days Gün)';
+    }
+    if (s.year == e.year) {
+      return '${s.day} ${turkishShortMonthNames[s.month - 1]} - '
+          '${e.day} ${turkishShortMonthNames[e.month - 1]} ($days Gün)';
+    }
+    return '${s.day} ${turkishShortMonthNames[s.month - 1]} ${s.year} - '
+        '${e.day} ${turkishShortMonthNames[e.month - 1]} ${e.year} ($days Gün)';
   }
 
   String get formattedDateSummary {
     switch (_dateMode) {
       case RouteDateMode.flexible:
-        return 'Tarih Esnek';
-      case RouteDateMode.currentOrPastTrip:
-        return 'Şu An / Geçmiş Gezi';
-      case RouteDateMode.upcomingWeekend:
-        return 'Bu Hafta Sonu';
+        if (_flexibleStartMonth == null) return 'Tarih Esnek';
+        return formattedFlexiblePeriod;
+      case RouteDateMode.instantTrip:
+        if (_instantTripRange == null) return 'Anlık Gezi';
+        return formatShortDateRange(_instantTripRange!);
+      case RouteDateMode.seasons:
+        if (_selectedSeasons.isEmpty) return 'Mevsimler';
+        return formattedSelectedSeasonsTitle;
       case RouteDateMode.customRange:
-        if (_customDateRange == null) return 'Tarih Seçildi';
-        final s = _customDateRange!.start;
-        final e = _customDateRange!.end;
-        final days = _customDateRange!.duration.inDays + 1;
-        return '${s.day}.${s.month} - ${e.day}.${e.month} ($days Gün)';
+        if (_customDateRange == null) return 'Belirli Tarihler';
+        return formatShortDateRange(_customDateRange!);
     }
   }
 
+  /// Backend API ile uyumlu tarih payload'ı üretir
+  RouteDateSelectionPayload get datePayload => buildDatePayload();
+
+  RouteDateSelectionPayload buildDatePayload() {
+    final label = _truncate(formattedDateSummary, 140);
+    switch (_dateMode) {
+      case RouteDateMode.flexible:
+        final period = formattedFlexiblePeriod;
+        return RouteDateSelectionPayload(
+          dateMode: _dateMode.apiValue,
+          flexiblePeriod: period.isEmpty ? null : _truncate(period, 120),
+          dateRangeLabel: label,
+        );
+      case RouteDateMode.seasons:
+        final title = formattedSelectedSeasonsTitle;
+        final ranges = formattedSelectedSeasonRanges;
+        final rawPeriod = title.isEmpty
+            ? ''
+            : '${_selectedHemisphere.labelTr}: $title ($ranges)';
+        return RouteDateSelectionPayload(
+          dateMode: _dateMode.apiValue,
+          flexiblePeriod: rawPeriod.isEmpty ? null : _truncate(rawPeriod, 120),
+          dateRangeLabel: label,
+        );
+      case RouteDateMode.instantTrip:
+        final r = _instantTripRange;
+        return RouteDateSelectionPayload(
+          dateMode: _dateMode.apiValue,
+          startDate: r == null ? null : formatIsoDate(r.start),
+          endDate: r == null ? null : formatIsoDate(r.end),
+          dateRangeLabel: label,
+        );
+      case RouteDateMode.customRange:
+        final r = _customDateRange;
+        return RouteDateSelectionPayload(
+          dateMode: _dateMode.apiValue,
+          startDate: r == null ? null : formatIsoDate(r.start),
+          endDate: r == null ? null : formatIsoDate(r.end),
+          dateRangeLabel: label,
+        );
+    }
+  }
+
+  static const Map<String, String> _popularCurrencyFlags = <String, String>{
+    'TRY': '🇹🇷',
+    'USD': '🇺🇸',
+    'EUR': '🇪🇺',
+    'GBP': '🇬🇧',
+    'THB': '🇹🇭',
+    'JPY': '🇯🇵',
+    'CHF': '🇨🇭',
+    'AED': '🇦🇪',
+    'SAR': '🇸🇦',
+    'CAD': '🇨🇦',
+    'AUD': '🇦🇺',
+    'KRW': '🇰🇷',
+    'IDR': '🇮🇩',
+    'GEL': '🇬🇪',
+    'AZN': '🇦🇿',
+    'RSD': '🇷🇸',
+    'BAM': '🇧🇦',
+    'BGN': '🇧🇬',
+    'PLN': '🇵🇱',
+    'CZK': '🇨🇿',
+    'HUF': '🇭🇺',
+    'NOK': '🇳🇴',
+    'SEK': '🇸🇪',
+    'DKK': '🇩🇰',
+    'CNY': '🇨🇳',
+    'INR': '🇮🇳',
+    'SGD': '🇸🇬',
+    'MYR': '🇲🇾',
+    'EGP': '🇪🇬',
+    'MAD': '🇲🇦',
+    'BRL': '🇧🇷',
+    'MXN': '🇲🇽',
+  };
+
+  static const List<String> _popularCurrencyOrder = <String>[
+    'EUR',
+    'GBP',
+    'THB',
+    'JPY',
+    'CHF',
+    'AED',
+    'SAR',
+    'CAD',
+    'AUD',
+    'KRW',
+    'IDR',
+    'GEL',
+    'AZN',
+    'RSD',
+    'BAM',
+    'BGN',
+    'PLN',
+    'CZK',
+    'HUF',
+    'NOK',
+    'SEK',
+    'DKK',
+    'CNY',
+    'INR',
+    'SGD',
+    'EGP',
+    'MAD',
+    'BRL',
+    'MXN',
+  ];
+
+  void setBudgetEnabled(bool enabled) {
+    if (_isBudgetEnabled == enabled) return;
+    _isBudgetEnabled = enabled;
+    notifyListeners();
+  }
+
   void toggleBudgetEnabled() {
-    _isBudgetEnabled = !_isBudgetEnabled;
+    setBudgetEnabled(!_isBudgetEnabled);
+  }
+
+  void setUserCurrencyCode(String code) {
+    final normalized = code.trim().toUpperCase();
+    if (normalized.isEmpty || normalized == _userCurrencyCode) return;
+    if (exchangeRateFor(normalized) == null) return;
+    final previousCode = _userCurrencyCode;
+    _minBudget = _minBudget <= 0
+        ? 0.0
+        : convertCurrencyAmount(
+            _minBudget,
+            fromCode: previousCode,
+            toCode: normalized,
+          );
+    _maxBudget = _maxBudget == null
+        ? null
+        : convertCurrencyAmount(
+            _maxBudget!,
+            fromCode: previousCode,
+            toCode: normalized,
+          );
+    _userCurrencyCode = normalized;
+    _addedCountryCurrencyCodes.remove(normalized);
     notifyListeners();
   }
 
   void setBudgetCurrency(RouteBudgetCurrency newCurrency) {
-    if (_currency == newCurrency) return;
-    _currency = newCurrency;
-    _minBudget = 0;
-    _maxBudget = (newCurrency.maxLimit * 0.4).roundToDouble();
+    setUserCurrencyCode(newCurrency.code);
+  }
+
+  GeographyExchangeRate? exchangeRateFor(String code) {
+    final normalized = code.trim().toUpperCase();
+    if (normalized.isEmpty) return null;
+    final storeRate = _geographyStore?.rateFor(normalized);
+    if (storeRate != null && storeRate.ratePerUsd > 0) {
+      return storeRate;
+    }
+    return resolveBaselineExchangeRate(normalized);
+  }
+
+  double convertCurrencyAmount(
+    double amount, {
+    required String fromCode,
+    required String toCode,
+  }) {
+    final from = fromCode.trim().toUpperCase();
+    final to = toCode.trim().toUpperCase();
+    if (from.isEmpty || to.isEmpty || from == to) {
+      return amount;
+    }
+    if (_geographyStore != null) {
+      return _geographyStore.convertAmount(
+        amount,
+        fromCode: from,
+        toCode: to,
+      );
+    }
+    final fromRate = resolveBaselineExchangeRate(from)?.ratePerUsd;
+    final toRate = resolveBaselineExchangeRate(to)?.ratePerUsd;
+    if (fromRate == null || fromRate <= 0 || toRate == null || toRate <= 0) {
+      return amount;
+    }
+    return (amount / fromRate) * toRate;
+  }
+
+  String currencySymbolFor(String code) {
+    final normalized = code.trim().toUpperCase();
+    final rate = exchangeRateFor(normalized);
+    if (rate != null && rate.symbol.trim().isNotEmpty) {
+      return rate.symbol;
+    }
+    for (final continent in activeContinentsCatalog) {
+      for (final country in continent.allCountries) {
+        if (country.currencyCode == normalized &&
+            country.currencySymbol.isNotEmpty) {
+          return country.currencySymbol;
+        }
+      }
+    }
+    return normalized;
+  }
+
+  String currencyNameTrFor(String code) {
+    final normalized = code.trim().toUpperCase();
+    final rate = exchangeRateFor(normalized);
+    if (rate != null && rate.nameTr.trim().isNotEmpty) {
+      return rate.nameTr;
+    }
+    for (final continent in activeContinentsCatalog) {
+      for (final country in continent.allCountries) {
+        if (country.currencyCode == normalized &&
+            country.currencyNameTr.isNotEmpty) {
+          return country.currencyNameTr;
+        }
+      }
+    }
+    return normalized;
+  }
+
+  String currencyFlagFor(String code) {
+    final normalized = code.trim().toUpperCase();
+    return _popularCurrencyFlags[normalized] ?? '💱';
+  }
+
+  BuilderCountryCatalogItem? _findBuilderCountryByCode(String countryCode) {
+    final upper = countryCode.trim().toUpperCase();
+    if (upper.isEmpty) return null;
+    for (final continent in activeContinentsCatalog) {
+      for (final country in continent.allCountries) {
+        if (country.code.toUpperCase() == upper) {
+          return country;
+        }
+      }
+    }
+    final storeNode = _geographyStore?.findCountry(upper);
+    if (storeNode != null) {
+      return _mapCountryNodeToBuilder(storeNode, _geographyStore?.lang ?? 'tr');
+    }
+    return null;
+  }
+
+  /// Seçili ülkelerin (`selectedCountryCodes` + seçili şehirlerin ülkeleri)
+  /// `userCurrencyCode` ve `secondaryCurrencyCode` dışındaki tekilleştirilmiş para birimleri.
+  List<BuilderCountryCurrencyOption> get availableSelectedCountryCurrencies {
+    final excludedCodes = <String>{_userCurrencyCode, secondaryCurrencyCode};
+    final grouped = <String, _MutableCurrencyGroup>{};
+
+    for (final countryCode in selectedDestinationCountryCodes) {
+      final upperCountry = countryCode.trim().toUpperCase();
+      if (upperCountry.isEmpty) continue;
+
+      final builderCountry = _findBuilderCountryByCode(upperCountry);
+      final fallback = resolveCountryCurrencyFallback(upperCountry);
+
+      final currencyCode =
+          (builderCountry?.currencyCode ?? fallback.code).trim().toUpperCase();
+      if (currencyCode.isEmpty || excludedCodes.contains(currencyCode)) {
+        continue;
+      }
+
+      final symbol = (builderCountry?.currencySymbol ?? '').isNotEmpty
+          ? builderCountry!.currencySymbol
+          : currencySymbolFor(currencyCode);
+      final nameTr = (builderCountry?.currencyNameTr ?? '').isNotEmpty
+          ? builderCountry!.currencyNameTr
+          : currencyNameTrFor(currencyCode);
+      final countryName = (builderCountry?.name ?? '').isNotEmpty
+          ? builderCountry!.name
+          : upperCountry;
+      final flagEmoji = builderCountry?.flagEmoji ?? '';
+
+      final group = grouped.putIfAbsent(
+        currencyCode,
+        () => _MutableCurrencyGroup(
+          code: currencyCode,
+          symbol: symbol,
+          nameTr: nameTr,
+        ),
+      );
+      if (countryName.isNotEmpty && !group.countryNames.contains(countryName)) {
+        group.countryNames.add(countryName);
+      }
+      if (flagEmoji.isNotEmpty && !group.flagEmojis.contains(flagEmoji)) {
+        group.flagEmojis.add(flagEmoji);
+      }
+    }
+
+    return List<BuilderCountryCurrencyOption>.unmodifiable(
+      grouped.values.map((g) => g.toOption()),
+    );
+  }
+
+  /// Seçili ülke para birimleri dışında eklenebilecek popüler dünya para birimleri
+  List<BuilderCountryCurrencyOption> get popularExtraCurrencies {
+    final excluded = <String>{
+      _userCurrencyCode,
+      secondaryCurrencyCode,
+      for (final opt in availableSelectedCountryCurrencies) opt.code,
+    };
+
+    final options = <BuilderCountryCurrencyOption>[];
+    for (final code in _popularCurrencyOrder) {
+      if (excluded.contains(code)) continue;
+      final rate = exchangeRateFor(code);
+      if (rate == null) continue;
+      final flag = _popularCurrencyFlags[code];
+      options.add(
+        BuilderCountryCurrencyOption(
+          code: code,
+          symbol: rate.symbol.isNotEmpty ? rate.symbol : code,
+          nameTr: rate.nameTr.isNotEmpty ? rate.nameTr : code,
+          countryNames: const <String>[],
+          flagEmojis: flag != null ? <String>[flag] : const <String>[],
+        ),
+      );
+    }
+    return List<BuilderCountryCurrencyOption>.unmodifiable(options);
+  }
+
+  /// Kullanıcının açıkça eklediği ülke para birimleri (varsayılan olarak boştur)
+  List<BuilderCountryCurrencyOption> get addedCountryCurrencies {
+    final selectedMap = <String, BuilderCountryCurrencyOption>{
+      for (final opt in availableSelectedCountryCurrencies) opt.code: opt,
+    };
+
+    final result = <BuilderCountryCurrencyOption>[];
+    for (final code in _addedCountryCurrencyCodes) {
+      final fromSelected = selectedMap[code];
+      if (fromSelected != null) {
+        result.add(fromSelected);
+        continue;
+      }
+      final rate = exchangeRateFor(code);
+      final flag = _popularCurrencyFlags[code];
+      result.add(
+        BuilderCountryCurrencyOption(
+          code: code,
+          symbol: rate?.symbol ?? currencySymbolFor(code),
+          nameTr: rate?.nameTr ?? currencyNameTrFor(code),
+          countryNames: const <String>[],
+          flagEmojis: flag != null ? <String>[flag] : const <String>[],
+        ),
+      );
+    }
+    return List<BuilderCountryCurrencyOption>.unmodifiable(result);
+  }
+
+  bool isCountryCurrencyAdded(String code) {
+    final normalized = code.trim().toUpperCase();
+    return _addedCountryCurrencyCodes.contains(normalized);
+  }
+
+  void addCountryCurrency(String code) {
+    final normalized = code.trim().toUpperCase();
+    if (normalized.isEmpty ||
+        normalized == _userCurrencyCode ||
+        normalized == secondaryCurrencyCode) {
+      return;
+    }
+    if (exchangeRateFor(normalized) == null) return;
+    if (_addedCountryCurrencyCodes.contains(normalized)) return;
+    _addedCountryCurrencyCodes.add(normalized);
     notifyListeners();
   }
 
-  void updateRouteBudgetRange(double minVal, double maxVal) {
-    _minBudget = minVal.clamp(0, _currency.maxLimit);
-    _maxBudget = maxVal.clamp(_minBudget, _currency.maxLimit);
+  void removeCountryCurrency(String code) {
+    final normalized = code.trim().toUpperCase();
+    if (_addedCountryCurrencyCodes.remove(normalized)) {
+      notifyListeners();
+    }
+  }
+
+  void toggleCountryCurrency(String code) {
+    if (isCountryCurrencyAdded(code)) {
+      removeCountryCurrency(code);
+    } else {
+      addCountryCurrency(code);
+    }
+  }
+
+  void clearAddedCountryCurrencies() {
+    if (_addedCountryCurrencyCodes.isEmpty) return;
+    _addedCountryCurrencyCodes.clear();
     notifyListeners();
   }
 
-  String formatCurrencyAmount(double value) {
-    final rounded = value.round();
+  void updateBudgetRangeForCurrency({
+    required String currencyCode,
+    double? minAmount,
+    double? maxAmount,
+    bool clearMaxAmount = false,
+  }) {
+    if (minAmount == null && maxAmount == null && !clearMaxAmount) return;
+    final normalized = currencyCode.trim().toUpperCase();
+    final effectiveCode = normalized.isEmpty ? _userCurrencyCode : normalized;
+
+    double toUserCurrency(double value) {
+      final nonNegative = value.isNaN || value.isInfinite || value < 0
+          ? 0.0
+          : value;
+      if (effectiveCode == _userCurrencyCode) {
+        return nonNegative;
+      }
+      return convertCurrencyAmount(
+        nonNegative,
+        fromCode: effectiveCode,
+        toCode: _userCurrencyCode,
+      );
+    }
+
+    if (!_isBudgetEnabled) {
+      _isBudgetEnabled = true;
+    }
+
+    if (clearMaxAmount) {
+      if (minAmount != null) {
+        _minBudget = toUserCurrency(minAmount);
+      }
+      _maxBudget = null;
+    } else if (minAmount != null && maxAmount != null) {
+      final convertedMin = toUserCurrency(minAmount);
+      final convertedMax = toUserCurrency(maxAmount);
+      _minBudget = math.min(convertedMin, convertedMax);
+      _maxBudget = math.max(convertedMin, convertedMax);
+    } else if (minAmount != null) {
+      final convertedMin = toUserCurrency(minAmount);
+      _minBudget = convertedMin;
+      if (_maxBudget != null && _minBudget > _maxBudget!) {
+        _maxBudget = _minBudget;
+      }
+    } else if (maxAmount != null) {
+      final convertedMax = toUserCurrency(maxAmount);
+      _maxBudget = convertedMax;
+      if (_maxBudget! < _minBudget) {
+        _minBudget = _maxBudget!;
+      }
+    }
+
+    notifyListeners();
+  }
+
+  void updateRouteBudgetRange(double minVal, double? maxVal) {
+    updateBudgetRangeForCurrency(
+      currencyCode: _userCurrencyCode,
+      minAmount: minVal,
+      maxAmount: maxVal,
+      clearMaxAmount: maxVal == null,
+    );
+  }
+
+  ({double min, double? max}) budgetAmountForCurrency(String code) {
+    final normalized = code.trim().toUpperCase();
+    if (normalized.isEmpty || normalized == _userCurrencyCode) {
+      return (min: _minBudget, max: _maxBudget);
+    }
+    return (
+      min: convertCurrencyAmount(
+        _minBudget,
+        fromCode: _userCurrencyCode,
+        toCode: normalized,
+      ),
+      max: _maxBudget == null
+          ? null
+          : convertCurrencyAmount(
+              _maxBudget!,
+              fromCode: _userCurrencyCode,
+              toCode: normalized,
+            ),
+    );
+  }
+
+  static String formatGroupedInteger(double value) {
+    final safeValue = value.isNaN || value.isInfinite || value < 0 ? 0.0 : value;
+    final rounded = safeValue.round();
     final str = rounded.toString();
     final buffer = StringBuffer();
     for (int i = 0; i < str.length; i++) {
@@ -1776,12 +3210,114 @@ class RouteBuilderViewModel extends ChangeNotifier
       }
       buffer.write(str[i]);
     }
-    return '${_currency.symbol}$buffer';
+    return buffer.toString();
+  }
+
+  static double? parseBudgetAmountInput(String raw) {
+    final cleaned = raw.trim().replaceAll(' ', '');
+    if (cleaned.isEmpty) return null;
+
+    final digitsAndSeps = cleaned.replaceAll(RegExp(r'[^0-9.,]'), '');
+    if (digitsAndSeps.isEmpty) return null;
+
+    String normalized;
+    final hasDot = digitsAndSeps.contains('.');
+    final hasComma = digitsAndSeps.contains(',');
+    if (hasDot && hasComma) {
+      if (digitsAndSeps.lastIndexOf(',') > digitsAndSeps.lastIndexOf('.')) {
+        normalized = digitsAndSeps.replaceAll('.', '').replaceAll(',', '.');
+      } else {
+        normalized = digitsAndSeps.replaceAll(',', '');
+      }
+    } else if (hasDot) {
+      if (RegExp(r'^\d{1,3}(\.\d{3})+$').hasMatch(digitsAndSeps)) {
+        normalized = digitsAndSeps.replaceAll('.', '');
+      } else {
+        normalized = digitsAndSeps;
+      }
+    } else if (hasComma) {
+      if (RegExp(r'^\d{1,3}(,\d{3})+$').hasMatch(digitsAndSeps)) {
+        normalized = digitsAndSeps.replaceAll(',', '');
+      } else {
+        normalized = digitsAndSeps.replaceAll(',', '.');
+      }
+    } else {
+      normalized = digitsAndSeps;
+    }
+
+    final parsed = double.tryParse(normalized);
+    if (parsed == null || parsed.isNaN || parsed.isInfinite || parsed < 0) {
+      return null;
+    }
+    return parsed;
+  }
+
+  String formatAmountForCurrency(double value, String code) {
+    final normalized = code.trim().toUpperCase();
+    final grouped = formatGroupedInteger(value);
+    final symbol = currencySymbolFor(normalized);
+    final needsSpace =
+        symbol.length >= 3 && RegExp(r'^[A-Za-z.]+$').hasMatch(symbol);
+    return needsSpace ? '$symbol $grouped' : '$symbol$grouped';
+  }
+
+  String formatCurrencyAmount(double value) =>
+      formatAmountForCurrency(value, _userCurrencyCode);
+
+  static String _formatExchangeRateValue(double value) {
+    if (value >= 100) {
+      return formatGroupedInteger(value);
+    }
+    return value.toStringAsFixed(2).replaceAll('.', ',');
+  }
+
+  String exchangeRateSummary(String fromCode, String toCode) {
+    final from = fromCode.trim().toUpperCase();
+    final to = toCode.trim().toUpperCase();
+    final fromSymbol = currencySymbolFor(from);
+    final toSymbol = currencySymbolFor(to);
+    if (from.isEmpty || to.isEmpty || from == to) {
+      return '1 $fromSymbol = 1 $toSymbol';
+    }
+    final unitRate = convertCurrencyAmount(1, fromCode: from, toCode: to);
+    if (unitRate < 0.1) {
+      final perThousand = convertCurrencyAmount(
+        1000,
+        fromCode: from,
+        toCode: to,
+      );
+      return '1.000 $fromSymbol ≈ ${_formatExchangeRateValue(perThousand)} $toSymbol';
+    }
+    return '1 $fromSymbol ≈ ${_formatExchangeRateValue(unitRate)} $toSymbol';
   }
 
   String get formattedBudgetSummary {
     if (!_isBudgetEnabled) return 'Bütçe Sınırı Yok';
-    return '${formatCurrencyAmount(_minBudget)} – ${formatCurrencyAmount(_maxBudget)}';
+    final maxVal = _maxBudget;
+    if (maxVal == null) {
+      if (_minBudget <= 0) {
+        return '${formatAmountForCurrency(0, _userCurrencyCode)} – Sınırsız';
+      }
+      final primaryPlus =
+          '${formatAmountForCurrency(_minBudget, _userCurrencyCode)}+';
+      if (_userCurrencyCode == secondaryCurrencyCode) {
+        return primaryPlus;
+      }
+      final secondaryRange = budgetAmountForCurrency(secondaryCurrencyCode);
+      final secondaryPlus =
+          '${formatAmountForCurrency(secondaryRange.min, secondaryCurrencyCode)}+';
+      return '$primaryPlus ($secondaryPlus)';
+    }
+
+    final primaryText =
+        '${formatAmountForCurrency(_minBudget, _userCurrencyCode)} – ${formatAmountForCurrency(maxVal, _userCurrencyCode)}';
+    if (_userCurrencyCode == secondaryCurrencyCode) {
+      return primaryText;
+    }
+    final secondaryRange = budgetAmountForCurrency(secondaryCurrencyCode);
+    final secondaryText =
+        '${formatAmountForCurrency(secondaryRange.min, secondaryCurrencyCode)} – ${formatAmountForCurrency(secondaryRange.max!, secondaryCurrencyCode)}';
+    return '$primaryText ($secondaryText)';
   }
 
   void updateAdultsCount(int delta) {
@@ -1796,5 +3332,29 @@ class RouteBuilderViewModel extends ChangeNotifier
     if (next == _childrenCount) return;
     _childrenCount = next;
     notifyListeners();
+  }
+}
+
+class _MutableCurrencyGroup {
+  _MutableCurrencyGroup({
+    required this.code,
+    required this.symbol,
+    required this.nameTr,
+  });
+
+  final String code;
+  final String symbol;
+  final String nameTr;
+  final List<String> countryNames = <String>[];
+  final List<String> flagEmojis = <String>[];
+
+  BuilderCountryCurrencyOption toOption() {
+    return BuilderCountryCurrencyOption(
+      code: code,
+      symbol: symbol,
+      nameTr: nameTr,
+      countryNames: List<String>.unmodifiable(countryNames),
+      flagEmojis: List<String>.unmodifiable(flagEmojis),
+    );
   }
 }
