@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 import 'package:flutter/gestures.dart';
@@ -2535,6 +2536,898 @@ void main() {
 
           viewModel.dispose();
         }
+      },
+    );
+  });
+
+  group('RouteBuilder - 4. Adım Sonrası 3\'lü Mod Seçimi ve Swipe & Pick (Wireframe 1 & 2) Testleri', () {
+    BuilderCountryCatalogItem findCountryByCode(String code) {
+      for (final continent in RouteBuilderViewModel.continentsCatalog) {
+        for (final subRegion in continent.subRegions) {
+          for (final country in subRegion.countries) {
+            if (country.code == code) return country;
+          }
+        }
+      }
+      throw StateError('Ülke bulunamadı: $code');
+    }
+
+    testWidgets(
+      'Wireframe 1 & 2: 3\'lü Mod Seçimi, Özel Turlar yönlendirmesi, fotoğraf geçişi, sağa/sola kaydırma, geri al (undo), çoklu filtre, elle arama ve rota önizlemesi akışı',
+      (WidgetTester tester) async {
+        final viewModel = RouteBuilderViewModel();
+        viewModel.toggleCountrySelection(findCountryByCode('GB'));
+        viewModel.goToStep(RouteWizardStep.travelers);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: BeenHereTheme.darkTheme,
+            home: Scaffold(
+              body: RouteBuilderScreen(viewModel: viewModel),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. 4. Adımda "Rotayı Oluşturmaya Başla (2 Kişi)" butonuna tıkla
+        final startButton = find.text('Rotayı Oluşturmaya Başla (2 Kişi)');
+        expect(startButton, findsOneWidget);
+        await tester.tap(startButton);
+        await tester.pumpAndSettle();
+
+        // Wireframe 1: 3'lü Mod Seçim Ekranı açılmalı
+        expect(
+          find.byKey(const ValueKey<String>('route-mode-selection-view')),
+          findsOneWidget,
+        );
+        expect(find.text('Özgün Rota'), findsOneWidget);
+        expect(
+          find.text('Bağımsız olarak kendi rotanızı oluşturun'),
+          findsOneWidget,
+        );
+        expect(find.text('Gezgin Rotaları'), findsOneWidget);
+        expect(
+          find.text('Yerli ve global gezginlerin deneyimlerinden faydalanın'),
+          findsOneWidget,
+        );
+        expect(find.text('Özel Turlar'), findsOneWidget);
+        expect(
+          find.text('Tur şirketlerinin düzenlediği seyahat rotalarını keşfedin'),
+          findsOneWidget,
+        );
+
+        // 2. "Parametreler" butonuna basınca 4. adıma geri dönmeli, tekrar basınca Mod Seçimi açılmalı
+        await tester.tap(
+          find.byKey(const ValueKey<String>('swipe-deck-back-to-params-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Seçili Ziyaretçi Adımı'), findsOneWidget);
+
+        await tester.tap(find.text('Rotayı Oluşturmaya Başla (2 Kişi)'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('route-mode-selection-view')),
+          findsOneWidget,
+        );
+
+        // 3. "Özel Turlar" seçildiğinde istisna yönlendirme ekranı açılmalı
+        await tester.tap(
+          find.byKey(const ValueKey<String>('route-mode-card-private-tours')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('private-tours-redirect-view')),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Kurumsal Tur Şirketleri Özel Yönlendirmesi'),
+          findsOneWidget,
+        );
+
+        // "Mod Seçimine Dön" ile tekrar 3'lü Mod Seçim ekranına dönelim
+        await tester.tap(
+          find.byKey(
+            const ValueKey<String>('private-tours-back-to-modes-button'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('route-mode-selection-view')),
+          findsOneWidget,
+        );
+
+        // 4. "Özgün Rota" kartına tıkla -> Wireframe 2 Swipe & Pick ekranı açılmalı
+        await tester.tap(
+          find.byKey(const ValueKey<String>('route-mode-card-original')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-stage-view')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-stage-card')),
+          findsOneWidget,
+        );
+
+        // Wireframe 2 üzerindeki 6 kontrol butonu ve alt orta mekan kimliği doğrulanır
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-filter-button')),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Kategoriler, Gezginler, Tur şirketleri'),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-manual-search-button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-dismissed-button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-selected-button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-undo-button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-preview-button')),
+          findsOneWidget,
+        );
+
+        // İlk vitrin mekanı: Big Ben / İngiltere, Londra / Tarihi Yapı, Simge Yapı
+        expect(find.text('Big Ben'), findsOneWidget);
+        expect(find.text('İngiltere, Londra'), findsOneWidget);
+        expect(find.text('Tarihi Yapı, Simge Yapı'), findsOneWidget);
+
+        // 5. Karta dokunma (Tap) -> ilgili mekanın fotoğrafları arasında geçiş
+        expect(find.textContaining('Fotoğraf 1/3'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('swipe-deck-stage-card')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Fotoğraf 2/3'), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const ValueKey<String>('swipe-deck-stage-card')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Fotoğraf 3/3'), findsOneWidget);
+
+        // 6. Sağa kaydırma eylemi (Swipe Right) -> Seçili mekanlar listesine ekleme
+        await tester.drag(
+          find.byKey(const ValueKey<String>('swipe-deck-stage-card')),
+          const Offset(240, 0),
+        );
+        await tester.pumpAndSettle();
+
+        expect(viewModel.selectedDeckPlaces.length, 1);
+        expect(viewModel.selectedDeckPlaces.first.name, 'Big Ben');
+        expect(
+          find.byKey(
+            const ValueKey<String>(
+              'swipe-side-mini-card-selected-gb-london-big-ben',
+            ),
+          ),
+          findsOneWidget,
+        );
+        // Sıradaki mekana geçilmiş olmalı (Tower Bridge)
+        expect(find.text('Tower Bridge'), findsOneWidget);
+
+        // 7. Sola kaydırma eylemi (Swipe Left) -> Seçilmemiş mekanlar listesine ekleme
+        await tester.drag(
+          find.byKey(const ValueKey<String>('swipe-deck-stage-card')),
+          const Offset(-240, 0),
+        );
+        await tester.pumpAndSettle();
+
+        expect(viewModel.dismissedDeckPlaces.length, 1);
+        expect(viewModel.dismissedDeckPlaces.first.name, 'Tower Bridge');
+        expect(
+          find.byKey(
+            const ValueKey<String>(
+              'swipe-side-mini-card-dismissed-gb-london-tower-bridge',
+            ),
+          ),
+          findsOneWidget,
+        );
+
+        // 8. Sol Alt "Önceki işlemi geri al" (Undo) butonu -> Sola kaydırılan Tower Bridge geri gelir
+        await tester.tap(
+          find.byKey(const ValueKey<String>('swipe-deck-undo-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(viewModel.dismissedDeckPlaces, isEmpty);
+        expect(find.text('Tower Bridge'), findsOneWidget);
+
+        // Tekrar Undo -> Sağa kaydırılan Big Ben geri gelir
+        await tester.tap(
+          find.byKey(const ValueKey<String>('swipe-deck-undo-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(viewModel.selectedDeckPlaces, isEmpty);
+        expect(find.text('Big Ben'), findsOneWidget);
+
+        // Big Ben'i tekrar sağa, Tower Bridge'i sola kaydıralım
+        await tester.drag(
+          find.byKey(const ValueKey<String>('swipe-deck-stage-card')),
+          const Offset(240, 0),
+        );
+        await tester.pumpAndSettle();
+        await tester.drag(
+          find.byKey(const ValueKey<String>('swipe-deck-stage-card')),
+          const Offset(-240, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(viewModel.selectedDeckPlaces.length, 1);
+        expect(viewModel.dismissedDeckPlaces.length, 1);
+
+        // 9. Sol Orta "Seçilmemiş Mekanlar" çekmecesini aç ve Tower Bridge'i Seçili Listeye al
+        await tester.tap(
+          find.byKey(const ValueKey<String>('swipe-deck-dismissed-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-dismissed-sheet')),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.byKey(
+            const ValueKey<String>(
+              'dismissed-to-selected-gb-london-tower-bridge',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(viewModel.dismissedDeckPlaces, isEmpty);
+        expect(viewModel.selectedDeckPlaces.length, 2);
+        Navigator.of(
+          tester.element(
+            find.byKey(const ValueKey<String>('swipe-deck-dismissed-sheet')),
+          ),
+        ).pop();
+        await tester.pumpAndSettle();
+
+        // 10. Sağ Üst "Elle Mekan Arama" çekmecesini aç, "Efes" ara ve seçili listeye ekle
+        await tester.tap(
+          find.byKey(const ValueKey<String>('swipe-deck-manual-search-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-manual-search-sheet')),
+          findsOneWidget,
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey<String>('manual-place-search-input')),
+          'Efes',
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Efes Antik Kenti'), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(
+            const ValueKey<String>('manual-search-add-tr-izmir-efes'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(viewModel.selectedDeckPlaces.length, 3);
+        Navigator.of(
+          tester.element(
+            find.byKey(
+              const ValueKey<String>('swipe-deck-manual-search-sheet'),
+            ),
+          ),
+        ).pop();
+        await tester.pumpAndSettle();
+
+        // 11. Sol Üst "Kategori, Gezgin, Tur Şirketi Seçimi" çoklu filtre çekmecesini aç
+        await tester.tap(
+          find.byKey(const ValueKey<String>('swipe-deck-filter-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-filter-sheet')),
+          findsOneWidget,
+        );
+
+        // Gezgin Rotaları'nı da çoklu olarak seçelim + bir kategori seçelim
+        await tester.tap(
+          find.byKey(const ValueKey<String>('filter-source-traveler')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey<String>('filter-category-Tarihi Yapı')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          viewModel.activeDeckSourceModes.contains(
+            RouteDeckSourceMode.originalRoute,
+          ),
+          isTrue,
+        );
+        expect(
+          viewModel.activeDeckSourceModes.contains(
+            RouteDeckSourceMode.travelerRoutes,
+          ),
+          isTrue,
+        );
+        expect(viewModel.activeDeckCategories.contains('Tarihi Yapı'), isTrue);
+
+        await tester.tap(
+          find.byKey(const ValueKey<String>('filter-sheet-apply-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('Özgün Rota + Gezgin Rotaları • 1 Kategori'),
+          findsOneWidget,
+        );
+
+        // 12. Sağ Alt "Rota Önizlemesi (Sonraki Adım)" çekmecesini aç
+        await tester.tap(
+          find.byKey(const ValueKey<String>('swipe-deck-preview-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-route-preview-sheet')),
+          findsOneWidget,
+        );
+        expect(find.text('Rota Önizlemesi (Sonraki Adım)'), findsOneWidget);
+        expect(find.text('Rotadaki Seçili Duraklar (3)'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('route-preview-confirm-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // 13. Filtre içinden "Özel Turlar (Tur Şirketleri) ↗" seçildiğinde özel yönlendirme ekranına geçilmeli
+        await tester.tap(
+          find.byKey(const ValueKey<String>('swipe-deck-filter-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey<String>('filter-source-private-tours')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('private-tours-redirect-view')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'Dar ekran (375x667) Dark & Light temada 3\'lü Mod Seçimi ve Swipe & Pick ekranı sıfır overflow verir',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(375, 667);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+          BeenHereThemeController.instance.setDark();
+        });
+
+        for (final isDark in [true, false]) {
+          if (isDark) {
+            BeenHereThemeController.instance.setDark();
+          } else {
+            BeenHereThemeController.instance.setLight();
+          }
+
+          final viewModel = RouteBuilderViewModel();
+          viewModel.toggleCountrySelection(findCountryByCode('ES'));
+          viewModel.goToStep(RouteWizardStep.travelers);
+          viewModel.enterRouteCreationFlow();
+
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: isDark
+                  ? BeenHereTheme.darkTheme
+                  : BeenHereTheme.lightTheme,
+              home: Scaffold(
+                body: RouteBuilderScreen(viewModel: viewModel),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+
+          // Gezgin Rotaları ile Swipe & Pick ekranına geç
+          await tester.tap(
+            find.byKey(const ValueKey<String>('route-mode-card-traveler')),
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          expect(
+            find.byKey(const ValueKey<String>('swipe-deck-stage-card')),
+            findsOneWidget,
+          );
+
+          viewModel.dispose();
+        }
+      },
+    );
+
+    testWidgets(
+      'Swipe & Pick: Tinder tarzı tutup çekme, alttan sıradaki mekanın gözükmesi, çekimde seçilenler/geçilenler dahil butonların gizlenmesi, sağ üst yeşil tik / sol üst kırmızı X ikonu, yanlardan boşluksuz tam genişlik ve sadece alt menü kısmının buzlu olması',
+      (WidgetTester tester) async {
+        final viewModel = RouteBuilderViewModel();
+        viewModel.toggleCountrySelection(findCountryByCode('GB'));
+        viewModel.goToStep(RouteWizardStep.travelers);
+        viewModel.enterRouteCreationFlow();
+        viewModel.openOriginalRouteSwipeDeck();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: BeenHereTheme.darkTheme,
+            home: Scaffold(
+              body: RouteBuilderScreen(viewModel: viewModel),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final stageViewFinder = find.byKey(
+          const ValueKey<String>('swipe-deck-stage-view'),
+        );
+        final cardFinder = find.byKey(
+          const ValueKey<String>('swipe-deck-stage-card'),
+        );
+        final rotationFinder = find.byKey(
+          const ValueKey<String>('swipe-deck-card-rotation'),
+        );
+        final surfaceFinder = find.byKey(
+          const ValueKey<String>('swipe-deck-card-surface'),
+        );
+        final fadeFinder = find.byKey(
+          const ValueKey<String>('swipe-deck-card-fade'),
+        );
+        final bottomMenuFrostFinder = find.byKey(
+          const ValueKey<String>('swipe-deck-bottom-menu-frost'),
+        );
+        final filterOpacityFinder = find.byKey(
+          const ValueKey<String>('swipe-deck-filter-controls-opacity'),
+        );
+        final searchOpacityFinder = find.byKey(
+          const ValueKey<String>('swipe-deck-search-button-opacity'),
+        );
+        final selectedOpacityFinder = find.byKey(
+          const ValueKey<String>('swipe-deck-selected-button-opacity'),
+        );
+        final dismissedOpacityFinder = find.byKey(
+          const ValueKey<String>('swipe-deck-dismissed-button-opacity'),
+        );
+        final undoOpacityFinder = find.byKey(
+          const ValueKey<String>('swipe-deck-undo-button-opacity'),
+        );
+        final previewOpacityFinder = find.byKey(
+          const ValueKey<String>('swipe-deck-preview-button-opacity'),
+        );
+
+        const double expectedGentleTiltRadians = 6.0 * math.pi / 180.0;
+
+        // 0. Kart yanlardan boşluksuz (left: 0, right: tam ekran) ve en alta (alt menüye) kadar genişler;
+        //    sadece alttaki menü şeridi buzlu (swipe-deck-bottom-menu-frost) gözükür.
+        final stageRect = tester.getRect(stageViewFinder);
+        final cardRect = tester.getRect(cardFinder);
+        expect(cardRect.left, closeTo(0.0, 0.01));
+        expect(cardRect.right, closeTo(stageRect.right, 0.01));
+        expect(cardRect.bottom, closeTo(stageRect.bottom, 0.01));
+
+        expect(bottomMenuFrostFinder, findsOneWidget);
+        final frostRect = tester.getRect(bottomMenuFrostFinder);
+        expect(frostRect.bottom, closeTo(stageRect.bottom, 0.01));
+        final shaderMaskFinder = find.descendant(
+          of: bottomMenuFrostFinder,
+          matching: find.byType(ShaderMask),
+        );
+        expect(shaderMaskFinder, findsOneWidget);
+        expect(
+          tester.widget<ShaderMask>(shaderMaskFinder).blendMode,
+          BlendMode.dstIn,
+        );
+        expect(
+          find.descendant(
+            of: bottomMenuFrostFinder,
+            matching: find.byType(ImageFiltered),
+          ),
+          findsOneWidget,
+        );
+
+        // Mekan başlığı/kategorileri ve alt butonlar alttaki menü alanının üstünde yer alır
+        final categoriesRect = tester.getRect(
+          find.byKey(const ValueKey<String>('swipe-card-place-categories')),
+        );
+        expect(categoriesRect.bottom, lessThanOrEqualTo(stageRect.bottom - 68.0));
+
+        // Başlangıçta ilk kart (Big Ben) 1.0 opasitede ve tüm çevre butonları görünür (1.0)
+        expect(find.text('Big Ben'), findsOneWidget);
+        expect(
+          tester.widget<FadeTransition>(fadeFinder).opacity.value,
+          closeTo(1.0, 0.001),
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(filterOpacityFinder).opacity,
+          1.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(searchOpacityFinder).opacity,
+          1.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(selectedOpacityFinder).opacity,
+          1.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(dismissedOpacityFinder).opacity,
+          1.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(undoOpacityFinder).opacity,
+          1.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(previewOpacityFinder).opacity,
+          1.0,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('swipe-card-right-check-icon')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('swipe-card-left-x-icon')),
+          findsNothing,
+        );
+
+        // =====================================================================
+        // 1. SAĞA TUTUP ÇEKME:
+        //    - Dik 30°/45° eğim yok, Tinder tarzı hafif çekim (±6°)
+        //    - Alttan sıradaki mekan (Tower Bridge - swipe-deck-next-card) gözükür
+        //    - Kartın sağ üst köşesinde yeşil tik ikonu (swipe-card-right-check-icon) çıkar
+        //    - Seçilenler ve Geçilenler dahil tüm çevre butonları gizlenir (opacity: 0.0)
+        // =====================================================================
+        final rightGesture = await tester.startGesture(
+          tester.getCenter(cardFinder),
+        );
+        await rightGesture.moveBy(const Offset(20, 0));
+        await tester.pump();
+        await rightGesture.moveBy(const Offset(160, 0));
+        await tester.pump();
+
+        // A) Tinder tarzı hafif çekim açısı (+6°), dik açı devrilmesi yok
+        final rightRotationMatrix =
+            tester.widget<Transform>(rotationFinder).transform;
+        final rightAngleRadians = math.atan2(
+          rightRotationMatrix.entry(1, 0),
+          rightRotationMatrix.entry(0, 0),
+        );
+        expect(rightAngleRadians, closeTo(expectedGentleTiltRadians, 0.001));
+
+        // B) Alttan sıradaki mekan kartı (Tower Bridge) gözükür
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-next-card')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('swipe-next-card-place-title')),
+          findsOneWidget,
+        );
+        expect(find.text('Tower Bridge'), findsOneWidget);
+
+        // C) Sağa çekilirken kartın SOL ÜSTÜNDE arka plansız/bordersız büyük yeşil tik ikonu
+        //    ve Tailwind animate-ping tarzı sonsuz yankı animasyonu çıkar (X ikonu çıkmaz)
+        final rightCheckFinder = find.byKey(
+          const ValueKey<String>('swipe-card-right-check-icon'),
+        );
+        expect(rightCheckFinder, findsOneWidget);
+        expect(
+          tester.getCenter(rightCheckFinder).dx,
+          lessThan(tester.getCenter(surfaceFinder).dx),
+        );
+        // Arka plan/border kutusu (Container/DecoratedBox) yoktur, sadece büyük ikonlar vardır
+        expect(
+          find.descendant(
+            of: rightCheckFinder,
+            matching: find.byType(Container),
+          ),
+          findsNothing,
+        );
+        final primaryCheckIcon = tester.widget<Icon>(
+          find.descendant(
+            of: find.descendant(
+              of: rightCheckFinder,
+              matching: find.byKey(
+                const ValueKey<String>('swipe-card-primary-action-icon'),
+              ),
+            ),
+            matching: find.byType(Icon),
+          ),
+        );
+        expect(primaryCheckIcon.size, 56.0);
+        expect(primaryCheckIcon.color, BeenHereColors.verifiedEmerald);
+
+        // Tailwind animate-ping sonsuz animasyonu zaman ilerledikçe büyür ve sönümlenir
+        await tester.pump(const Duration(milliseconds: 300));
+        final pingTransform = tester.widget<Transform>(
+          find.descendant(
+            of: rightCheckFinder,
+            matching: find.byKey(
+              const ValueKey<String>('swipe-card-ping-echo'),
+            ),
+          ),
+        );
+        final pingOpacity = tester.widget<Opacity>(
+          find.descendant(
+            of: rightCheckFinder,
+            matching: find.byKey(
+              const ValueKey<String>('swipe-card-ping-echo-opacity'),
+            ),
+          ),
+        );
+        expect(pingTransform.transform.getMaxScaleOnAxis(), greaterThan(1.2));
+        expect(pingOpacity.opacity, greaterThan(0.0));
+        expect(pingOpacity.opacity, lessThan(0.75));
+
+        expect(
+          find.byKey(const ValueKey<String>('swipe-card-left-x-icon')),
+          findsNothing,
+        );
+
+        // D) Yeşil (BeenHereColors.verifiedEmerald) BoxShadow aktif
+        final rightDecoration =
+            tester.widget<Container>(surfaceFinder).decoration! as BoxDecoration;
+        final rightPrimaryShadow = rightDecoration.boxShadow!.first;
+        expect(
+          rightPrimaryShadow.color.r,
+          closeTo(BeenHereColors.verifiedEmerald.r, 0.01),
+        );
+        expect(
+          rightPrimaryShadow.color.g,
+          closeTo(BeenHereColors.verifiedEmerald.g, 0.01),
+        );
+        expect(
+          rightPrimaryShadow.color.b,
+          closeTo(BeenHereColors.verifiedEmerald.b, 0.01),
+        );
+
+        // E) Seçilenler ve Geçilenler dahil TÜM çevre butonları gizlenir (opacity: 0.0)
+        expect(
+          tester.widget<AnimatedOpacity>(filterOpacityFinder).opacity,
+          0.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(searchOpacityFinder).opacity,
+          0.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(selectedOpacityFinder).opacity,
+          0.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(dismissedOpacityFinder).opacity,
+          0.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(undoOpacityFinder).opacity,
+          0.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(previewOpacityFinder).opacity,
+          0.0,
+        );
+
+        // F) Parmağı bırak -> kart kayarak çıkar, alttaki mekan (Tower Bridge) 0 -> 1 opasiteyle aktifleşir
+        await rightGesture.up();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 210));
+        expect(find.text('Tower Bridge'), findsOneWidget);
+        final opacityAtNewCardStart =
+            tester.widget<FadeTransition>(fadeFinder).opacity.value;
+        expect(opacityAtNewCardStart, lessThan(0.25));
+
+        await tester.pump(const Duration(milliseconds: 120));
+        final opacityMidFadeIn =
+            tester.widget<FadeTransition>(fadeFinder).opacity.value;
+        expect(opacityMidFadeIn, greaterThan(opacityAtNewCardStart));
+        expect(opacityMidFadeIn, lessThan(1.0));
+
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<FadeTransition>(fadeFinder).opacity.value,
+          closeTo(1.0, 0.001),
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(selectedOpacityFinder).opacity,
+          1.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(dismissedOpacityFinder).opacity,
+          1.0,
+        );
+
+        // =====================================================================
+        // 2. SOLA TUTUP ÇEKME:
+        //    - Kartın sol üst köşesinde kırmızı X ikonu (swipe-card-left-x-icon) çıkar
+        //    - Alttan sıradaki mekan kartı gözükür
+        //    - Seçilenler ve Geçilenler dahil tüm çevre butonları gizlenir
+        // =====================================================================
+        final leftGesture = await tester.startGesture(
+          tester.getCenter(cardFinder),
+        );
+        await leftGesture.moveBy(const Offset(-20, 0));
+        await tester.pump();
+        await leftGesture.moveBy(const Offset(-160, 0));
+        await tester.pump();
+
+        // A) Tinder tarzı hafif sola çekim açısı (-6°)
+        final leftRotationMatrix =
+            tester.widget<Transform>(rotationFinder).transform;
+        final leftAngleRadians = math.atan2(
+          leftRotationMatrix.entry(1, 0),
+          leftRotationMatrix.entry(0, 0),
+        );
+        expect(leftAngleRadians, closeTo(-expectedGentleTiltRadians, 0.001));
+
+        // B) Alttan sıradaki 3. mekan kartı gözükür
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-next-card')),
+          findsOneWidget,
+        );
+
+        // C) Sola çekilirken kartın SAĞ ÜSTÜNDE arka plansız/bordersız büyük kırmızı X ikonu çıkar
+        final leftXFinder = find.byKey(
+          const ValueKey<String>('swipe-card-left-x-icon'),
+        );
+        expect(leftXFinder, findsOneWidget);
+        expect(
+          tester.getCenter(leftXFinder).dx,
+          greaterThan(tester.getCenter(surfaceFinder).dx),
+        );
+        expect(
+          find.descendant(
+            of: leftXFinder,
+            matching: find.byType(Container),
+          ),
+          findsNothing,
+        );
+        final primaryXIcon = tester.widget<Icon>(
+          find.descendant(
+            of: find.descendant(
+              of: leftXFinder,
+              matching: find.byKey(
+                const ValueKey<String>('swipe-card-primary-action-icon'),
+              ),
+            ),
+            matching: find.byType(Icon),
+          ),
+        );
+        expect(primaryXIcon.size, 56.0);
+        expect(primaryXIcon.color, const Color(0xFFE53935));
+        expect(
+          find.byKey(const ValueKey<String>('swipe-card-right-check-icon')),
+          findsNothing,
+        );
+
+        // D) Kırmızı (Color(0xFFE53935)) BoxShadow aktif
+        const expectedRedShadowColor = Color(0xFFE53935);
+        final leftDecoration =
+            tester.widget<Container>(surfaceFinder).decoration! as BoxDecoration;
+        final leftPrimaryShadow = leftDecoration.boxShadow!.first;
+        expect(
+          leftPrimaryShadow.color.r,
+          closeTo(expectedRedShadowColor.r, 0.01),
+        );
+        expect(
+          leftPrimaryShadow.color.g,
+          closeTo(expectedRedShadowColor.g, 0.01),
+        );
+        expect(
+          leftPrimaryShadow.color.b,
+          closeTo(expectedRedShadowColor.b, 0.01),
+        );
+
+        // E) Seçilenler ve Geçilenler dahil tüm çevre butonları gizlenir (opacity: 0.0)
+        expect(
+          tester.widget<AnimatedOpacity>(filterOpacityFinder).opacity,
+          0.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(searchOpacityFinder).opacity,
+          0.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(selectedOpacityFinder).opacity,
+          0.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(dismissedOpacityFinder).opacity,
+          0.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(undoOpacityFinder).opacity,
+          0.0,
+        );
+        expect(
+          tester.widget<AnimatedOpacity>(previewOpacityFinder).opacity,
+          0.0,
+        );
+
+        // F) Parmağı bırak -> sola kayarak çıkış ve sonraki kartın 0 -> 1 opasite geçişi
+        await leftGesture.up();
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<FadeTransition>(fadeFinder).opacity.value,
+          closeTo(1.0, 0.001),
+        );
+        expect(viewModel.selectedDeckPlaces.length, 1);
+        expect(viewModel.dismissedDeckPlaces.length, 1);
+
+        // =====================================================================
+        // 3. SEÇİLENLER & GEÇİLENLER KENAR LİSTESİ:
+        //    Border ve sayı olmadan yalnızca birbirinin üstüne binen maks. 5 küçük mekan resim kartı
+        // =====================================================================
+        final selectedFirstCardFinder = find.byKey(
+          const ValueKey<String>(
+            'swipe-side-mini-card-selected-gb-london-big-ben',
+          ),
+        );
+        final dismissedFirstCardFinder = find.byKey(
+          const ValueKey<String>(
+            'swipe-side-mini-card-dismissed-gb-london-tower-bridge',
+          ),
+        );
+        expect(selectedFirstCardFinder, findsOneWidget);
+        expect(dismissedFirstCardFinder, findsOneWidget);
+
+        // Her iki taraftaki küçük kartlarda border olmamalı ve sayı indikatörleri bulunmamalı
+        final selectedMiniDecoration = tester
+            .widget<Container>(selectedFirstCardFinder)
+            .decoration! as BoxDecoration;
+        final dismissedMiniDecoration = tester
+            .widget<Container>(dismissedFirstCardFinder)
+            .decoration! as BoxDecoration;
+        expect(selectedMiniDecoration.border, isNull);
+        expect(dismissedMiniDecoration.border, isNull);
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-selected-count')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('swipe-deck-dismissed-count')),
+          findsNothing,
+        );
+
+        // Toplam 6 seçili mekan olacak şekilde 5 mekan daha ekleyelim ->
+        // Sağ kenarda yukarıdan aşağıya maksimum 5 küçük resim kartı olmalı
+        for (int i = 0; i < 5; i++) {
+          viewModel.swipeCurrentPlaceRight();
+        }
+        await tester.pumpAndSettle();
+
+        expect(viewModel.selectedDeckPlaces.length, 6);
+        final selectedMiniCardsFinder = find.byWidgetPredicate(
+          (widget) =>
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>)
+                  .value
+                  .startsWith('swipe-side-mini-card-selected-'),
+        );
+        expect(selectedMiniCardsFinder, findsNWidgets(5));
+
+        // Küçük kartların yukarıdan aşağıya birbirinin üstüne binerek (overlapping) sıralandığını doğrula
+        final firstMiniRect = tester.getRect(selectedMiniCardsFinder.at(0));
+        final secondMiniRect = tester.getRect(selectedMiniCardsFinder.at(1));
+        expect(firstMiniRect.top, lessThan(secondMiniRect.top));
+        // İkinci kart, birinci kartın alt kenarından daha yukarıdan başlar (üst üste biner)
+        expect(secondMiniRect.top, lessThan(firstMiniRect.bottom));
+        expect(
+          secondMiniRect.top - firstMiniRect.top,
+          closeTo(22.0, 0.1),
+        );
       },
     );
   });

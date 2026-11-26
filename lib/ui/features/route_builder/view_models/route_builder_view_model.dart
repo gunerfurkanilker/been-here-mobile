@@ -18,6 +18,103 @@ enum RouteWizardStep {
   final String label;
 }
 
+/// 4. Adım ("Rotayı Oluşturmaya Başla") sonrası devreye giren Rota Kurgulama aşamaları
+enum RouteCreationStage {
+  /// Wireframe 1: 3'lü Rota Kurgulama Modu Seçim Ekranı (Özgün Rota, Gezgin Rotaları, Özel Turlar)
+  modeSelection,
+
+  /// Wireframe 2: İnteraktif Swipe & Pick (Mekan Kaydırma) Ekranı
+  swipeDeck,
+
+  /// Wireframe 2 İstisna Kuralı: Özel Turlar (Tur Şirketleri) özel yönlendirme görünümü
+  privateToursRedirect,
+}
+
+/// Mekan kaydırma destesinin kaynak modları (Özgün Rota ve Gezgin Rotaları çoklu seçilebilir)
+enum RouteDeckSourceMode {
+  originalRoute(
+    'ORIGINAL_ROUTE',
+    'Özgün Rota',
+    'Bağımsız olarak kendi rotanızı oluşturun',
+  ),
+  travelerRoutes(
+    'TRAVELER_ROUTES',
+    'Gezgin Rotaları',
+    'Yerli ve global gezginlerin deneyimlerinden faydalanın',
+  );
+
+  const RouteDeckSourceMode(this.apiValue, this.titleTr, this.subtitleTr);
+  final String apiValue;
+  final String titleTr;
+  final String subtitleTr;
+}
+
+/// Swipe & Pick destesindeki her bir mekan kartı modeli
+class SwipeDeckPlaceItem {
+  const SwipeDeckPlaceItem({
+    required this.id,
+    required this.name,
+    required this.countryCode,
+    required this.countryName,
+    required this.cityName,
+    required this.categories,
+    required this.photoUrls,
+    required this.photoCaptions,
+    required this.supportedModes,
+    this.travelerAuthor,
+    this.isHeroShowcase = false,
+  });
+
+  final String id;
+  final String name;
+  final String countryCode;
+  final String countryName;
+  final String cityName;
+  final List<String> categories;
+  final List<String> photoUrls;
+  final List<String> photoCaptions;
+  final Set<RouteDeckSourceMode> supportedModes;
+  final String? travelerAuthor;
+  final bool isHeroShowcase;
+
+  String get formattedLocation => '$countryName, $cityName';
+  String get formattedCategories => categories.join(', ');
+}
+
+/// Geri Al (Undo) butonu için yapılan sağa/sola kaydırma geçmiş kaydı
+class SwipeDeckHistoryEntry {
+  const SwipeDeckHistoryEntry({
+    required this.place,
+    required this.wasSwipedRight,
+  });
+
+  final SwipeDeckPlaceItem place;
+  final bool wasSwipedRight;
+}
+
+/// Özel Turlar (Tur Şirketleri) özel yönlendirme ekranındaki kurumsal tur paketi modeli
+class CorporateTourPackagePreview {
+  const CorporateTourPackagePreview({
+    required this.id,
+    required this.title,
+    required this.operatorName,
+    required this.countryCode,
+    required this.locationSummary,
+    required this.durationLabel,
+    required this.priceLabel,
+    required this.highlights,
+  });
+
+  final String id;
+  final String title;
+  final String operatorName;
+  final String countryCode;
+  final String locationSummary;
+  final String durationLabel;
+  final String priceLabel;
+  final List<String> highlights;
+}
+
 class BuilderCityCatalogItem {
   const BuilderCityCatalogItem({
     required this.name,
@@ -2038,6 +2135,7 @@ class RouteBuilderViewModel extends ChangeNotifier
     _selectedCityKeys.clear();
     _addedCountryCurrencyCodes.clear();
     _hasManualHemisphereOverride = false;
+    _isRouteCreationFlowActive = false;
     _syncRecommendedHemisphere();
     notifyListeners();
   }
@@ -2053,6 +2151,7 @@ class RouteBuilderViewModel extends ChangeNotifier
 
   void goToStep(RouteWizardStep step) {
     _currentStep = step;
+    _isRouteCreationFlowActive = false;
     notifyListeners();
   }
 
@@ -3332,6 +3431,605 @@ class RouteBuilderViewModel extends ChangeNotifier
     if (next == _childrenCount) return;
     _childrenCount = next;
     notifyListeners();
+  }
+
+  // ===========================================================================
+  // 4. ADIM SONRASI ROTA KURGULAMA & SWIPE & PICK MEKAN DESTESİ DURUM YÖNETİMİ
+  // ===========================================================================
+
+  bool _isRouteCreationFlowActive = false;
+  bool get isRouteCreationFlowActive => _isRouteCreationFlowActive;
+
+  RouteCreationStage _creationStage = RouteCreationStage.modeSelection;
+  RouteCreationStage get creationStage => _creationStage;
+
+  final Set<RouteDeckSourceMode> _activeDeckSourceModes = <RouteDeckSourceMode>{
+    RouteDeckSourceMode.originalRoute,
+  };
+  Set<RouteDeckSourceMode> get activeDeckSourceModes =>
+      Set<RouteDeckSourceMode>.unmodifiable(_activeDeckSourceModes);
+
+  final Set<String> _activeDeckCategories = <String>{};
+  Set<String> get activeDeckCategories =>
+      Set<String>.unmodifiable(_activeDeckCategories);
+
+  final Set<String> _activeDeckTravelers = <String>{};
+  Set<String> get activeDeckTravelers =>
+      Set<String>.unmodifiable(_activeDeckTravelers);
+
+  final List<SwipeDeckPlaceItem> _selectedDeckPlaces = <SwipeDeckPlaceItem>[];
+  List<SwipeDeckPlaceItem> get selectedDeckPlaces =>
+      List<SwipeDeckPlaceItem>.unmodifiable(_selectedDeckPlaces);
+
+  final List<SwipeDeckPlaceItem> _dismissedDeckPlaces = <SwipeDeckPlaceItem>[];
+  List<SwipeDeckPlaceItem> get dismissedDeckPlaces =>
+      List<SwipeDeckPlaceItem>.unmodifiable(_dismissedDeckPlaces);
+
+  final List<SwipeDeckHistoryEntry> _swipeHistory = <SwipeDeckHistoryEntry>[];
+  List<SwipeDeckHistoryEntry> get swipeHistory =>
+      List<SwipeDeckHistoryEntry>.unmodifiable(_swipeHistory);
+
+  bool get canUndoSwipe => _swipeHistory.isNotEmpty;
+
+  int _currentPhotoIndex = 0;
+  int get currentPhotoIndex => _currentPhotoIndex;
+
+  String? _prioritizedRestoredPlaceId;
+
+  static const List<String> availableDeckCategories = <String>[
+    'Tarihi Yapı',
+    'Simge Yapı',
+    'Müze & Sanat',
+    'Kültür & Meydan',
+    'Gastronomi',
+    'Doğa & Manzara',
+  ];
+
+  static const List<String> availableDeckTravelers = <String>[
+    'Furkan Güner',
+    'Elif Yılmaz',
+    'Marco Polo',
+    'Zeynep Kaya',
+  ];
+
+  static const List<CorporateTourPackagePreview> corporateTourPackagesCatalog =
+      <CorporateTourPackagePreview>[
+    CorporateTourPackagePreview(
+      id: 'tour-uk-royal',
+      title: 'Britanya & Londra Kraliyet Rotaları',
+      operatorName: 'Compass Signature Tours',
+      countryCode: 'GB',
+      locationSummary: 'İngiltere • Londra, York, Manchester',
+      durationLabel: '5 Gün / 4 Gece',
+      priceLabel: '€1.290 / Kişi',
+      highlights: <String>[
+        'Big Ben & Westminster VIP Rehberli Yürüyüş',
+        'Thames Nehri Akşam Yemeği Kruvaziyeri',
+        'British Museum Özel Koleksiyon Turu',
+      ],
+    ),
+    CorporateTourPackagePreview(
+      id: 'tour-es-andalusia',
+      title: 'Endülüs & İspanya Kültür Mirası Paketi',
+      operatorName: 'Iberia Heritage Travel',
+      countryCode: 'ES',
+      locationSummary: 'İspanya • Sevilla, Cadiz, Madrid, Barselona',
+      durationLabel: '6 Gün / 5 Gece',
+      priceLabel: '€1.150 / Kişi',
+      highlights: <String>[
+        'Plaza de España & Real Alcázar Hızlı Geçiş',
+        'Sevilla Otantik Flamenko & Tapas Gecesi',
+        'Sagrada Família Mimari Rehberlik',
+      ],
+    ),
+    CorporateTourPackagePreview(
+      id: 'tour-tr-aegean',
+      title: 'Ege & Antik İyonya Keşif Turu',
+      operatorName: 'Anatolia Grand Expeditions',
+      countryCode: 'TR',
+      locationSummary: 'Türkiye • İzmir, İstanbul, Fethiye',
+      durationLabel: '4 Gün / 3 Gece',
+      priceLabel: '₺24.500 / Kişi',
+      highlights: <String>[
+        'Efes Antik Kenti Arkeolog Eşliğinde Gezi',
+        'Kordon & Kemeraltı Gastronomi Durakları',
+        'Ölüdeniz Tekne ve Koy Rotası',
+      ],
+    ),
+  ];
+
+  static const List<SwipeDeckPlaceItem> mockSwipeDeckPlacesCatalog =
+      <SwipeDeckPlaceItem>[
+    // 1. Wireframe 2 Vitrin Mekanı: Big Ben (İngiltere, Londra)
+    SwipeDeckPlaceItem(
+      id: 'gb-london-big-ben',
+      name: 'Big Ben',
+      countryCode: 'GB',
+      countryName: 'İngiltere',
+      cityName: 'Londra',
+      categories: <String>['Tarihi Yapı', 'Simge Yapı'],
+      photoUrls: <String>[
+        'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1529655683826-aba9b3e77383?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1486299267070-83823f5448dd?auto=format&fit=crop&w=900&q=80',
+      ],
+      photoCaptions: <String>[
+        'Westminster Köprüsü Kadrajı',
+        'Thames Nehri Gün Batımı',
+        'Saat Kulesi Mimari Detay',
+      ],
+      supportedModes: <RouteDeckSourceMode>{
+        RouteDeckSourceMode.originalRoute,
+        RouteDeckSourceMode.travelerRoutes,
+      },
+      travelerAuthor: 'Furkan Güner',
+      isHeroShowcase: true,
+    ),
+    SwipeDeckPlaceItem(
+      id: 'gb-london-tower-bridge',
+      name: 'Tower Bridge',
+      countryCode: 'GB',
+      countryName: 'İngiltere',
+      cityName: 'Londra',
+      categories: <String>['Simge Yapı', 'Doğa & Manzara'],
+      photoUrls: <String>[
+        'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1533929736458-ca588d08c8be?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1505761671935-60b3a7427bad?auto=format&fit=crop&w=900&q=80',
+      ],
+      photoCaptions: <String>[
+        'Kule Köprüsü Panoraması',
+        'Gece Işıklandırması',
+        'Yürüyüş Yolu Görünümü',
+      ],
+      supportedModes: <RouteDeckSourceMode>{
+        RouteDeckSourceMode.originalRoute,
+        RouteDeckSourceMode.travelerRoutes,
+      },
+      travelerAuthor: 'Marco Polo',
+    ),
+    SwipeDeckPlaceItem(
+      id: 'gb-london-british-museum',
+      name: 'British Museum',
+      countryCode: 'GB',
+      countryName: 'İngiltere',
+      cityName: 'Londra',
+      categories: <String>['Müze & Sanat', 'Tarihi Yapı'],
+      photoUrls: <String>[
+        'https://images.unsplash.com/photo-1574359411659-15573a27fd0c?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1518998053901-5348d3961a04?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1544967082-d9d25d867d66?auto=format&fit=crop&w=900&q=80',
+      ],
+      photoCaptions: <String>[
+        'Büyük Avlu Kubbesi',
+        'Antik Koleksiyon Galerisi',
+        'Giriş Sütunları',
+      ],
+      supportedModes: <RouteDeckSourceMode>{
+        RouteDeckSourceMode.originalRoute,
+      },
+      travelerAuthor: 'Elif Yılmaz',
+    ),
+    SwipeDeckPlaceItem(
+      id: 'es-sevilla-plaza-espana',
+      name: 'Plaza de España',
+      countryCode: 'ES',
+      countryName: 'İspanya',
+      cityName: 'Sevilla',
+      categories: <String>['Tarihi Yapı', 'Kültür & Meydan'],
+      photoUrls: <String>[
+        'https://images.unsplash.com/photo-1558642084-fd07fae5282e?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1509840841025-9088ba78a826?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1543783207-ec64e4d95325?auto=format&fit=crop&w=900&q=80',
+      ],
+      photoCaptions: <String>[
+        'Yarım Ay Meydan Panoraması',
+        'Seramik Köprü ve Kanal',
+        'Endülüs Kemerleri',
+      ],
+      supportedModes: <RouteDeckSourceMode>{
+        RouteDeckSourceMode.originalRoute,
+        RouteDeckSourceMode.travelerRoutes,
+      },
+      travelerAuthor: 'Furkan Güner',
+    ),
+    SwipeDeckPlaceItem(
+      id: 'es-sevilla-real-alcazar',
+      name: 'Real Alcázar Sarayı',
+      countryCode: 'ES',
+      countryName: 'İspanya',
+      cityName: 'Sevilla',
+      categories: <String>['Tarihi Yapı', 'Simge Yapı'],
+      photoUrls: <String>[
+        'https://images.unsplash.com/photo-1539037116277-4db20889f2d4?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1558642084-fd07fae5282e?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1512753360435-329c4535a9a7?auto=format&fit=crop&w=900&q=80',
+      ],
+      photoCaptions: <String>[
+        'Mudejar Avlusu',
+        'Kraliyet Bahçeleri',
+        'Elçiler Salonu Kubbesi',
+      ],
+      supportedModes: <RouteDeckSourceMode>{
+        RouteDeckSourceMode.travelerRoutes,
+      },
+      travelerAuthor: 'Elif Yılmaz',
+    ),
+    SwipeDeckPlaceItem(
+      id: 'es-cadiz-cathedral',
+      name: 'Cadiz Katedrali',
+      countryCode: 'ES',
+      countryName: 'İspanya',
+      cityName: 'Cadiz',
+      categories: <String>['Tarihi Yapı', 'Doğa & Manzara'],
+      photoUrls: <String>[
+        'https://images.unsplash.com/photo-1509840841025-9088ba78a826?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1543783207-ec64e4d95325?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1558642084-fd07fae5282e?auto=format&fit=crop&w=900&q=80',
+      ],
+      photoCaptions: <String>[
+        'Altın Kubbe ve Okyanus Kıyısı',
+        'Katedral Meydanı',
+        'Çan Kulesi Manzarası',
+      ],
+      supportedModes: <RouteDeckSourceMode>{
+        RouteDeckSourceMode.originalRoute,
+      },
+      travelerAuthor: 'Marco Polo',
+    ),
+    SwipeDeckPlaceItem(
+      id: 'tr-izmir-efes',
+      name: 'Efes Antik Kenti',
+      countryCode: 'TR',
+      countryName: 'Türkiye',
+      cityName: 'İzmir',
+      categories: <String>['Tarihi Yapı', 'Müze & Sanat'],
+      photoUrls: <String>[
+        'https://images.unsplash.com/photo-1589561454226-796a8aa89b05?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1541432901042-2d8bd64b4a9b?auto=format&fit=crop&w=900&q=80',
+      ],
+      photoCaptions: <String>[
+        'Celsus Kütüphanesi Cephesi',
+        'Büyük Antik Tiyatro',
+        'Kuretler Caddesi',
+      ],
+      supportedModes: <RouteDeckSourceMode>{
+        RouteDeckSourceMode.originalRoute,
+        RouteDeckSourceMode.travelerRoutes,
+      },
+      travelerAuthor: 'Furkan Güner',
+    ),
+    SwipeDeckPlaceItem(
+      id: 'tr-izmir-saat-kulesi',
+      name: 'İzmir Saat Kulesi',
+      countryCode: 'TR',
+      countryName: 'Türkiye',
+      cityName: 'İzmir',
+      categories: <String>['Simge Yapı', 'Kültür & Meydan'],
+      photoUrls: <String>[
+        'https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1541432901042-2d8bd64b4a9b?auto=format&fit=crop&w=900&q=80',
+      ],
+      photoCaptions: <String>[
+        'Konak Meydanı Görünümü',
+        'Körfez Gün Batımı',
+        'Taş İşlemeli Kemer Detayı',
+      ],
+      supportedModes: <RouteDeckSourceMode>{
+        RouteDeckSourceMode.travelerRoutes,
+      },
+      travelerAuthor: 'Zeynep Kaya',
+    ),
+    SwipeDeckPlaceItem(
+      id: 'fr-paris-eiffel',
+      name: 'Eyfel Kulesi',
+      countryCode: 'FR',
+      countryName: 'Fransa',
+      cityName: 'Paris',
+      categories: <String>['Simge Yapı', 'Gastronomi'],
+      photoUrls: <String>[
+        'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?auto=format&fit=crop&w=900&q=80',
+        'https://images.unsplash.com/photo-1511739001486-6bfe10ce785f?auto=format&fit=crop&w=900&q=80',
+      ],
+      photoCaptions: <String>[
+        'Champ de Mars Görünümü',
+        'Seine Nehri Kıyısı',
+        'Gece Işıltısı',
+      ],
+      supportedModes: <RouteDeckSourceMode>{
+        RouteDeckSourceMode.originalRoute,
+        RouteDeckSourceMode.travelerRoutes,
+      },
+      travelerAuthor: 'Marco Polo',
+    ),
+  ];
+
+  /// 4. Adımda "Rotayı Oluşturmaya Başla" butonuna basıldığında çağrılır
+  void enterRouteCreationFlow() {
+    _isRouteCreationFlowActive = true;
+    _creationStage = RouteCreationStage.modeSelection;
+    _currentPhotoIndex = 0;
+    notifyListeners();
+  }
+
+  /// Mod seçim ekranından tekrar 4 adımlı parametre sihirbazına döner
+  void exitRouteCreationFlow() {
+    if (!_isRouteCreationFlowActive) return;
+    _isRouteCreationFlowActive = false;
+    notifyListeners();
+  }
+
+  /// 3'lü Mod Seçim Ekranına (Wireframe 1) geri döner
+  void backToCreationModeSelection() {
+    _creationStage = RouteCreationStage.modeSelection;
+    _currentPhotoIndex = 0;
+    notifyListeners();
+  }
+
+  /// Wireframe 1: "Özgün Rota" kartına tıklandığında
+  void openOriginalRouteSwipeDeck() {
+    _activeDeckSourceModes
+      ..clear()
+      ..add(RouteDeckSourceMode.originalRoute);
+    _currentPhotoIndex = 0;
+    _creationStage = RouteCreationStage.swipeDeck;
+    notifyListeners();
+  }
+
+  /// Wireframe 1: "Gezgin Rotaları" kartına tıklandığında
+  void openTravelerRoutesSwipeDeck() {
+    _activeDeckSourceModes
+      ..clear()
+      ..add(RouteDeckSourceMode.travelerRoutes);
+    _currentPhotoIndex = 0;
+    _creationStage = RouteCreationStage.swipeDeck;
+    notifyListeners();
+  }
+
+  /// Wireframe 1 veya Filtre Paneli: "Özel Turlar" seçildiğinde özel yönlendirme açılır
+  void openPrivateToursRedirect() {
+    _creationStage = RouteCreationStage.privateToursRedirect;
+    notifyListeners();
+  }
+
+  /// Özel Turlar ekranından "Özgün Rota & Gezgin Rotalarına Geç" ile Swipe ekranına döner
+  void switchFromPrivateToursToSwipeDeck() {
+    if (_activeDeckSourceModes.isEmpty) {
+      _activeDeckSourceModes.add(RouteDeckSourceMode.originalRoute);
+    }
+    _currentPhotoIndex = 0;
+    _creationStage = RouteCreationStage.swipeDeck;
+    notifyListeners();
+  }
+
+  /// Çoklu kaynak modu seçimi (Özgün Rota / Gezgin Rotaları)
+  void toggleDeckSourceMode(RouteDeckSourceMode mode) {
+    if (_activeDeckSourceModes.contains(mode)) {
+      if (_activeDeckSourceModes.length > 1) {
+        _activeDeckSourceModes.remove(mode);
+      }
+    } else {
+      _activeDeckSourceModes.add(mode);
+    }
+    _currentPhotoIndex = 0;
+    notifyListeners();
+  }
+
+  /// Çoklu kategori filtresi seçimi
+  void toggleDeckCategoryFilter(String category) {
+    if (_activeDeckCategories.contains(category)) {
+      _activeDeckCategories.remove(category);
+    } else {
+      _activeDeckCategories.add(category);
+    }
+    _currentPhotoIndex = 0;
+    notifyListeners();
+  }
+
+  /// Çoklu gezgin filtresi seçimi
+  void toggleDeckTravelerFilter(String traveler) {
+    if (_activeDeckTravelers.contains(traveler)) {
+      _activeDeckTravelers.remove(traveler);
+    } else {
+      _activeDeckTravelers.add(traveler);
+    }
+    _currentPhotoIndex = 0;
+    notifyListeners();
+  }
+
+  /// Filtre panelindeki kategori ve gezgin seçimlerini sıfırlar
+  void resetDeckFilters() {
+    _activeDeckCategories.clear();
+    _activeDeckTravelers.clear();
+    if (_activeDeckSourceModes.isEmpty) {
+      _activeDeckSourceModes.add(RouteDeckSourceMode.originalRoute);
+    }
+    _currentPhotoIndex = 0;
+    notifyListeners();
+  }
+
+  /// Sol üst filtre butonunun yanındaki aktif filtre özeti metni
+  String get activeDeckFilterSummaryLabel {
+    final modeLabels = _activeDeckSourceModes
+        .map((m) => m.titleTr)
+        .join(' + ');
+    final parts = <String>[
+      if (modeLabels.isNotEmpty) modeLabels else 'Özgün Rota',
+    ];
+    if (_activeDeckCategories.isNotEmpty) {
+      parts.add('${_activeDeckCategories.length} Kategori');
+    }
+    if (_activeDeckTravelers.isNotEmpty) {
+      parts.add('${_activeDeckTravelers.length} Gezgin');
+    }
+    return parts.join(' • ');
+  }
+
+  /// Aktif filtrelere göre kalan (henüz sağa/sola kaydırılmamış) mekan destesi
+  List<SwipeDeckPlaceItem> get remainingDeckPlaces {
+    final selectedIds = _selectedDeckPlaces.map((p) => p.id).toSet();
+    final dismissedIds = _dismissedDeckPlaces.map((p) => p.id).toSet();
+
+    final filtered = mockSwipeDeckPlacesCatalog.where((place) {
+      if (selectedIds.contains(place.id) || dismissedIds.contains(place.id)) {
+        return false;
+      }
+      if (_activeDeckSourceModes.isNotEmpty &&
+          !place.supportedModes.any(_activeDeckSourceModes.contains)) {
+        return false;
+      }
+      if (_activeDeckCategories.isNotEmpty &&
+          !place.categories.any(_activeDeckCategories.contains)) {
+        return false;
+      }
+      if (_activeDeckTravelers.isNotEmpty &&
+          (place.travelerAuthor == null ||
+              !_activeDeckTravelers.contains(place.travelerAuthor))) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    // Sıralama:
+    // 1. Geri Al (Undo) ile az önce sahneye geri döndürülen mekan
+    // 2. Wireframe 2 vitrin mekanı (Big Ben)
+    // 3. Kullanıcının 1. adımda seçtiği şehir ve ülkelerle eşleşen mekanlar
+    // 4. Diğer mekanlar
+    int scoreFor(SwipeDeckPlaceItem item) {
+      if (_prioritizedRestoredPlaceId != null &&
+          item.id == _prioritizedRestoredPlaceId) {
+        return 1000;
+      }
+      if (item.isHeroShowcase) {
+        return 500;
+      }
+      final cityKey = '${item.countryCode}:${item.cityName}';
+      if (_selectedCityKeys.contains(cityKey)) {
+        return 300;
+      }
+      if (_selectedCountryCodes.contains(item.countryCode)) {
+        return 200;
+      }
+      return 100;
+    }
+
+    filtered.sort((a, b) => scoreFor(b).compareTo(scoreFor(a)));
+    return filtered;
+  }
+
+  /// Şu anda sahnede aktif olan mekan kartı
+  SwipeDeckPlaceItem? get currentDeckPlace {
+    final list = remainingDeckPlaces;
+    return list.isEmpty ? null : list.first;
+  }
+
+  /// Karta dokunulduğunda (Tap) ilgili mekanın fotoğrafları arasında geçiş yapar
+  void cycleCurrentPlacePhoto() {
+    final current = currentDeckPlace;
+    if (current == null || current.photoUrls.isEmpty) return;
+    _currentPhotoIndex = (_currentPhotoIndex + 1) % current.photoUrls.length;
+    notifyListeners();
+  }
+
+  /// Kartı sağa kaydırma (Swipe Right) -> Seçili mekanlar listesine ekler
+  void swipeCurrentPlaceRight() {
+    final current = currentDeckPlace;
+    if (current == null) return;
+    _prioritizedRestoredPlaceId = null;
+    _dismissedDeckPlaces.removeWhere((p) => p.id == current.id);
+    if (!_selectedDeckPlaces.any((p) => p.id == current.id)) {
+      _selectedDeckPlaces.add(current);
+    }
+    _swipeHistory.add(
+      SwipeDeckHistoryEntry(place: current, wasSwipedRight: true),
+    );
+    _currentPhotoIndex = 0;
+    notifyListeners();
+  }
+
+  /// Kartı sola kaydırma (Swipe Left) -> Seçilmemiş mekanlar listesine ekler
+  void swipeCurrentPlaceLeft() {
+    final current = currentDeckPlace;
+    if (current == null) return;
+    _prioritizedRestoredPlaceId = null;
+    _selectedDeckPlaces.removeWhere((p) => p.id == current.id);
+    if (!_dismissedDeckPlaces.any((p) => p.id == current.id)) {
+      _dismissedDeckPlaces.add(current);
+    }
+    _swipeHistory.add(
+      SwipeDeckHistoryEntry(place: current, wasSwipedRight: false),
+    );
+    _currentPhotoIndex = 0;
+    notifyListeners();
+  }
+
+  /// Sol alt buton: Önceki sağa veya sola kaydırma işlemini geri alır (Undo)
+  void undoLastSwipe() {
+    if (_swipeHistory.isEmpty) return;
+    final last = _swipeHistory.removeLast();
+    if (last.wasSwipedRight) {
+      _selectedDeckPlaces.removeWhere((p) => p.id == last.place.id);
+    } else {
+      _dismissedDeckPlaces.removeWhere((p) => p.id == last.place.id);
+    }
+    _prioritizedRestoredPlaceId = last.place.id;
+    _currentPhotoIndex = 0;
+    notifyListeners();
+  }
+
+  /// Sağ üst "Elle Mekan Arama" panelinden mekanı doğrudan seçili listeye ekler
+  void addPlaceToSelectedManually(SwipeDeckPlaceItem place) {
+    _prioritizedRestoredPlaceId = null;
+    _dismissedDeckPlaces.removeWhere((p) => p.id == place.id);
+    if (!_selectedDeckPlaces.any((p) => p.id == place.id)) {
+      _selectedDeckPlaces.add(place);
+      _swipeHistory.add(
+        SwipeDeckHistoryEntry(place: place, wasSwipedRight: true),
+      );
+    }
+    _currentPhotoIndex = 0;
+    notifyListeners();
+  }
+
+  /// Sol orta "Seçilmemiş Mekanlar" çekmecesinden bir mekanı Seçili Listeye taşır
+  void moveDismissedPlaceToSelected(SwipeDeckPlaceItem place) {
+    _dismissedDeckPlaces.removeWhere((p) => p.id == place.id);
+    if (!_selectedDeckPlaces.any((p) => p.id == place.id)) {
+      _selectedDeckPlaces.add(place);
+    }
+    notifyListeners();
+  }
+
+  /// Sol orta "Seçilmemiş Mekanlar" çekmecesinden bir mekanı desteye geri döndürür
+  void restoreDismissedPlaceToDeck(SwipeDeckPlaceItem place) {
+    _dismissedDeckPlaces.removeWhere((p) => p.id == place.id);
+    _prioritizedRestoredPlaceId = place.id;
+    _currentPhotoIndex = 0;
+    notifyListeners();
+  }
+
+  /// Sağ orta "Seçili Mekanlar" çekmecesinden bir mekanı listeden çıkarır
+  void removeSelectedDeckPlace(SwipeDeckPlaceItem place) {
+    _selectedDeckPlaces.removeWhere((p) => p.id == place.id);
+    _swipeHistory.removeWhere((h) => h.place.id == place.id);
+    notifyListeners();
+  }
+
+  /// Elle mekan arama sorgusuna göre tüm katalogdaki eşleşen mekanları döndürür
+  List<SwipeDeckPlaceItem> searchCatalogPlaces(String query) {
+    final normalized = _normalizeTr(query);
+    if (normalized.isEmpty) {
+      return mockSwipeDeckPlacesCatalog;
+    }
+    return mockSwipeDeckPlacesCatalog.where((place) {
+      return _normalizeTr(place.name).contains(normalized) ||
+          _normalizeTr(place.cityName).contains(normalized) ||
+          _normalizeTr(place.countryName).contains(normalized) ||
+          place.categories.any((c) => _normalizeTr(c).contains(normalized));
+    }).toList();
   }
 }
 

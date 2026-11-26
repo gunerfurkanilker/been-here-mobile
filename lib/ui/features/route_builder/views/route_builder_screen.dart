@@ -8,6 +8,7 @@ import '../../../core/widgets/geography_tree_filter_bar.dart';
 import '../view_models/route_builder_view_model.dart';
 import 'route_budget_selector_step.dart';
 import 'route_date_selector_step.dart';
+import 'route_swipe_deck_screen.dart';
 
 class RouteBuilderScreen extends StatefulWidget {
   const RouteBuilderScreen({
@@ -182,17 +183,8 @@ class _RouteBuilderScreenState extends State<RouteBuilderScreen>
       return;
     }
 
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: BeenHereColors.surfaceElevated,
-        content: Text(
-          '🧭 ${widget.viewModel.totalSelectedCountryCount} Ülke, ${widget.viewModel.totalSelectedCityCount} Şehir • ${widget.viewModel.totalTravelersCount} Gezgin için rota destesi hazırlanıyor...',
-          style: TextStyle(color: BeenHereColors.textPrimary),
-        ),
-      ),
-    );
+    HapticFeedback.mediumImpact();
+    widget.viewModel.enterRouteCreationFlow();
   }
 
   @override
@@ -206,6 +198,14 @@ class _RouteBuilderScreenState extends State<RouteBuilderScreen>
       child: ListenableBuilder(
         listenable: widget.viewModel,
         builder: (context, _) {
+          if (widget.viewModel.isRouteCreationFlowActive) {
+            return RouteSwipeDeckScreen(
+              key: const ValueKey<String>('route-builder-swipe-deck-flow'),
+              viewModel: widget.viewModel,
+              onBackToParameters: widget.viewModel.exitRouteCreationFlow,
+            );
+          }
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
